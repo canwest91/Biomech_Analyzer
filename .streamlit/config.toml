@@ -1,0 +1,6 @@
+[theme]
+primaryColor = "#00FF00" # 霓虹綠 (強調色)
+backgroundColor = "#0E1117" # 深色背景
+secondaryBackgroundColor = "#262730" # 側邊欄背景
+textColor = "#FAFAFA"
+font = "sans serif"
