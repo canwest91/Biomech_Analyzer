@@ -1,5 +1,4 @@
 
-````markdown
 # 🏃 Coach's Eye Pro: AI-Powered Biomechanics Analysis
 > 一個基於電腦視覺的運動生物力學分析平台，專為教練與運動科學家設計。
 
