@@ -127,7 +127,7 @@ selected_joints = st.sidebar.multiselect(
 st.sidebar.markdown("---")
 
 # --- 3. 主邏輯 ---
-st.title("🏃 Coach's Eye: 運動生物力學分析")
+st.title("運動生物力學分析")
 col1, col2 = st.columns([3, 1])
 image_placeholder = col1.empty() # 創建影像容器
 data_placeholder = col2.empty()  # 創建數據容器
