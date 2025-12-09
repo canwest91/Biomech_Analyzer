@@ -22,7 +22,7 @@
 
 ### 1. 複製專案 (Clone)
 ```bash
-git clone [https://github.com/您的帳號/biomech-ai-coach.git](https://github.com/您的帳號/biomech-ai-coach.git)
+git clone [https://github.com/canwest91/biomech-ai-coach.git](https://github.com/canwest91/biomech-ai-coach.git)
 cd biomech-ai-coach
 ````
 
