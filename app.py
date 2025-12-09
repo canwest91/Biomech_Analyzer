@@ -9,7 +9,7 @@ from core.geometry import calculate_angle, OneEuroFilter
 from core.visualizer import draw_analysis_overlay
 
 # --- 1. 系統設定 ---
-st.set_page_config(layout="wide", page_title="Coach's Eye Pro (YOLOv8 Edition)")
+st.set_page_config(layout="wide", page_title="動作捕捉分析系統demo版")
 
 # 初始化 Session State
 if 'result_video_path' not in st.session_state: st.session_state.result_video_path = None
@@ -118,7 +118,7 @@ def run_analysis_pipeline(input_path, output_path, selected_joints, progress_bar
         if total_frames > 0:
             progress = min(frame_count / total_frames, 1.0)
             progress_bar.progress(progress)
-            status_text.text(f"AI 精確分析中 (OneEuro濾波)... {int(progress*100)}%")
+            status_text.text(f"AI精確分析中... {int(progress*100)}%")
 
     cap.release()
     out.release()
