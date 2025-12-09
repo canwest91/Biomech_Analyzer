@@ -9,24 +9,23 @@ from core.geometry import calculate_angle, OneEuroFilter
 from core.visualizer import draw_analysis_overlay
 
 # --- 1. 系統設定 ---
-st.set_page_config(layout="wide", page_title="運動分析DEmo版")
+st.set_page_config(layout="wide", page_title="系統Demo")
 
 # 初始化 Session State
 if 'result_video_path' not in st.session_state: st.session_state.result_video_path = None
 if 'frame_index' not in st.session_state: st.session_state.frame_index = 0
 
-# --- CSS 優化 (增加 Slider 觸控手感) ---
+# --- CSS 優化 ---
 st.markdown("""
 <style>
     .stApp { background-color: #0E1117; color: #FAFAFA; }
     [data-testid="stSidebar"] { background-color: #262730; border-right: 1px solid #333; }
     
-    /* 優化滑桿：讓它變大一點，好拖動 */
+    /* 滑桿優化 */
     div.stSlider > div[data-baseweb="slider"] > div > div { background-color: #00FF00 !important; height: 12px !important; }
     div.stSlider > div[data-baseweb="slider"] > div { background-color: #444 !important; height: 12px !important; }
-    /* 滑塊圓點變大 */
     div.stSlider > div[data-baseweb="slider"] > div > div > div {
-        width: 24px !important; height: 24px !important; margin-top: -6px !important; /* 置中 */
+        width: 24px !important; height: 24px !important; margin-top: -6px !important;
         background-color: #FFFFFF !important; border: 3px solid #00FF00 !important;
         box-shadow: 0 0 15px rgba(0,255,0,0.8); cursor: grab;
     }
@@ -57,7 +56,7 @@ def load_model():
 
 model = load_model()
 
-# --- 背景分析引擎 ---
+# --- 背景分析引擎 (含編碼器防當機修正) ---
 def run_analysis_pipeline(input_path, output_path, selected_joints, progress_bar, status_text):
     cap = cv2.VideoCapture(input_path)
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -65,15 +64,20 @@ def run_analysis_pipeline(input_path, output_path, selected_joints, progress_bar
     fps = cap.get(cv2.CAP_PROP_FPS)
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     
-    # 這裡很重要：使用 H.264 (avc1) 編碼，確保瀏覽器能原生播放
-    # 如果 avc1 失敗，系統會嘗試 mp4v
-    try:
-        fourcc = cv2.VideoWriter_fourcc(*'avc1')
-        out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
-    except:
+    # 1. 嘗試 H.264 (avc1) - 瀏覽器相容性最佳
+    fourcc = cv2.VideoWriter_fourcc(*'avc1')
+    out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+    
+    # 2. 自動故障轉移 (Failover) - 若 avc1 失敗，改用 mp4v
+    if not out.isOpened():
+        print("警告: avc1 編碼器啟動失敗，切換至 mp4v...")
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
         out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
-    
+        
+    if not out.isOpened():
+        st.error("❌ 嚴重錯誤：無法初始化影片寫入器，請檢查系統編碼環境。")
+        return
+
     filters = {}
     frame_count = 0
     
@@ -134,7 +138,7 @@ selected_joints = st.sidebar.multiselect(
     default=["右膝 (R. Knee)", "右髖 (R. Hip)"]
 )
 
-st.title("Computer Vision 運動分析平台")
+st.title("運動分析平台")
 
 if uploaded_file:
     tfile = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') 
@@ -149,7 +153,7 @@ if uploaded_file:
         with st.spinner("正在進行 AI 運算..."):
             run_analysis_pipeline(tfile.name, st.session_state.result_video_path, selected_joints, prog_bar, status)
         
-        status.success("分析完成")
+        status.success("分析完成！")
         prog_bar.empty()
         st.session_state.frame_index = 0
 
@@ -157,20 +161,16 @@ if uploaded_file:
 if st.session_state.result_video_path and os.path.exists(st.session_state.result_video_path):
     st.divider()
     
-    # 使用 Tabs 區分兩種需求
     tab1, tab2 = st.tabs(["流暢回放", "逐幀分析"])
     
-    # === 模式 1: 原生播放器 (最順暢，支援手機拖拉) ===
+    # 模式 1: 原生播放器
     with tab1:
-        st.markdown("使用下方播放條可快速拖動")
-        # st.video 使用瀏覽器原生核心，這是達到 60FPS 滑順拖動的唯一解法
+        st.markdown("##### 最佳體驗：使用下方播放條可快速拖動")
         st.video(st.session_state.result_video_path)
-        
-        # 下載按鈕
         with open(st.session_state.result_video_path, 'rb') as f:
             st.download_button("⬇下載影片", f, file_name="analysis_result.mp4", mime="video/mp4")
 
-    # === 模式 2: 自定義播放器 (支援 0.1x 慢動作) ===
+    # 模式 2: 自定義播放器
     with tab2:
         cap = cv2.VideoCapture(st.session_state.result_video_path)
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
@@ -180,36 +180,24 @@ if st.session_state.result_video_path and os.path.exists(st.session_state.result
         
         with col2:
             st.info("此模式用於精確的慢動作分析")
-            playback_speed = st.select_slider(
-                "變速 (x)", options=[0.1, 0.2, 0.3, 0.5, 1.0], value=0.5
-            )
+            playback_speed = st.select_slider("變速 (x)", options=[0.1, 0.2, 0.3, 0.5, 1.0], value=0.5)
             is_playing = st.toggle("▶ 播放 / 暫停", value=False)
 
         with col1:
             image_spot = st.empty()
             
-            # 手動拖動模式 (不播放時)
             if not is_playing:
-                # 使用 Slider 直接控制 frame_index
-                selected_frame = st.slider(
-                    "拖動時間軸", 0, total_frames-1, st.session_state.frame_index, label_visibility="collapsed"
-                )
-                st.session_state.frame_index = selected_frame
-                
+                st.session_state.frame_index = st.slider("拖動時間軸", 0, total_frames-1, st.session_state.frame_index, label_visibility="collapsed")
                 cap.set(cv2.CAP_PROP_POS_FRAMES, st.session_state.frame_index)
                 ret, frame = cap.read()
                 if ret:
                     frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                    # 縮小顯示以提升反應速度
                     h, w = frame.shape[:2]
                     if w > 800:
                         s = 800/w
                         frame = cv2.resize(frame, (0,0), fx=s, fy=s)
                     image_spot.image(frame, channels="RGB", use_container_width=True)
-            
-            # 自動播放模式
             else:
-                slider_spot = st.empty()
                 while is_playing:
                     start = time.time()
                     cap.set(cv2.CAP_PROP_POS_FRAMES, st.session_state.frame_index)
@@ -225,15 +213,14 @@ if st.session_state.result_video_path and os.path.exists(st.session_state.result
                         frame = cv2.resize(frame, (0,0), fx=s, fy=s, interpolation=cv2.INTER_AREA)
                     
                     image_spot.image(frame, channels="RGB", use_container_width=True)
-                    slider_spot.progress(st.session_state.frame_index / max(1, total_frames-1))
-                    
                     st.session_state.frame_index += 1
                     
-                    # 智慧延遲
                     dt = time.time() - start
                     target = 1.0 / (fps * playback_speed)
                     time.sleep(max(0, target - dt))
         cap.release()
 
 elif not uploaded_file:
+    # --- 您的錯誤就是在這裡 ---
+    # 之前是 st.info() 空的，現在我幫您補上文字了
     st.info("請先上傳影片，並點擊「開始分析」。")
