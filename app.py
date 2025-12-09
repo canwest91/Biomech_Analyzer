@@ -195,14 +195,18 @@ if mode == "📁 影片分析":
         else:
             st.progress(st.session_state.frame_index / max(1, total_frames - 1))
 
-        # 影片處理迴圈
+# 影片處理迴圈
         while True:
+            # 1. 紀錄開始時間 (用於計算運算延遲)
+            start_time = time.time()
+            
             cap.set(cv2.CAP_PROP_POS_FRAMES, st.session_state.frame_index)
             ret, frame = cap.read()
             if not ret:
                 st.session_state.frame_index = 0
                 break
             
+            # 呼叫處理函數 (這是最花時間的步驟)
             processed_image, angle_data = process_frame(frame, height, width)
             
             image_placeholder.image(processed_image, channels="RGB", use_container_width=True)
@@ -217,9 +221,21 @@ if mode == "📁 影片分析":
                 st.session_state.frame_index += 1
                 if st.session_state.frame_index >= total_frames:
                     st.session_state.frame_index = 0
-                time.sleep(1.0 / (fps * play_speed)) 
+                
+                # --- 關鍵修正：動態睡眠時間計算 ---
+                # 計算剛剛處理那張圖花了多久
+                process_duration = time.time() - start_time
+                
+                # 計算理論上每一幀應該間隔多久
+                target_interval = 1.0 / (fps * play_speed)
+                
+                # 真正的休息時間 = 理論間隔 - 已經花掉的運算時間
+                # 如果運算超時 (結果小於0)，就不休息 (0秒)，全速跑下一張
+                wait_time = max(0, target_interval - process_duration)
+                
+                time.sleep(wait_time) 
             else:
-                break 
+                break
                 
         cap.release()
 
