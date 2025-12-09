@@ -124,7 +124,7 @@ def run_analysis_pipeline(input_path, output_path, selected_joints, progress_bar
     out.release()
 
 # --- UI 介面 ---
-st.sidebar.title("🔧 設定中心 (YOLOv8)")
+st.sidebar.title("設定中心")
 uploaded_file = st.sidebar.file_uploader("1. 上傳影片", type=['mp4', 'mov', 'avi'])
 
 st.sidebar.markdown("---")
@@ -134,7 +134,7 @@ selected_joints = st.sidebar.multiselect(
     default=["右膝 (R. Knee)", "右髖 (R. Hip)"]
 )
 
-st.title("🏃 Coach's Eye: YOLOv8 抗遮擋分析")
+st.title("動作捕捉分析平台")
 
 if uploaded_file:
     # 1. 處理上傳
@@ -142,7 +142,7 @@ if uploaded_file:
     tfile.write(uploaded_file.read())
     
     # 2. 分析按鈕
-    if st.sidebar.button("🚀 開始分析 (Analyze)"):
+    if st.sidebar.button("開始分析 (Analyze)"):
         output_temp = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4')
         st.session_state.result_video_path = output_temp.name
         
@@ -151,7 +151,7 @@ if uploaded_file:
         with st.spinner("正在啟動 YOLOv8 進行全身掃描..."):
             run_analysis_pipeline(tfile.name, st.session_state.result_video_path, selected_joints, prog_bar, status)
         
-        status.success("✅ 分析完成！YOLO 模型已生成影片。")
+        status.success("分析完成 YOLO 模型已生成影片。")
         prog_bar.empty()
         st.session_state.frame_index = 0 
 
@@ -165,7 +165,7 @@ if st.session_state.result_video_path and os.path.exists(st.session_state.result
     col1, col2 = st.columns([0.7, 0.3])
     
     with col2:
-        st.subheader("🎛️ 回放控制")
+        st.subheader("回放控制")
         playback_speed = st.select_slider(
             "變速播放 (x)", 
             options=[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0], 
@@ -173,7 +173,7 @@ if st.session_state.result_video_path and os.path.exists(st.session_state.result
         )
         is_playing = st.toggle("▶ 開始播放", value=False)
         with open(st.session_state.result_video_path, 'rb') as f:
-            st.download_button("⬇️ 下載分析影片", f, file_name="yolo_analysis.mp4", mime="video/mp4")
+            st.download_button("⬇下載分析影片", f, file_name="yolo_analysis.mp4", mime="video/mp4")
 
     with col1:
         image_spot = st.empty()
@@ -231,4 +231,4 @@ if st.session_state.result_video_path and os.path.exists(st.session_state.result
     cap.release()
 
 elif not uploaded_file:
-    st.info("👈 請先上傳影片，並點擊「開始分析」。(Powered by YOLOv8)")
+    st.info("請先上傳影片，並點擊「開始分析」。(Powered by YOLOv8)")
