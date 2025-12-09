@@ -1,6 +1,6 @@
 
-# 🏃 Coach's Eye Pro: AI-Powered Biomechanics Analysis
-> 一個基於電腦視覺的運動生物力學分析平台，專為教練與運動科學家設計。
+# AI-Powered Biomechanics Analysis
+> 一個基於電腦視覺的運動生物力學分析平台，專為教練與運動員設計。
 
 ![Python](https://img.shields.io/badge/Python-3.12-blue)
 ![Streamlit](https://img.shields.io/badge/Framework-Streamlit-red)
@@ -8,7 +8,7 @@
 ![OpenCV](https://img.shields.io/badge/Vision-OpenCV-yellow)
 
 ## 📖 專案簡介 (Introduction)
-**Coach's Eye Pro** 是一個自動化的動作分析工具。旨在解決傳統運動分析軟體需要大量手動標記（Manual Digitizing）的痛點。
+此程式是一個自動化的動作分析工具。旨在解決傳統運動分析軟體需要大量手動標記（Manual Digitizing）的痛點。
 
 本系統利用 **Google MediaPipe** 進行人體骨架偵測，結合 **OpenCV** 進行幾何運算，能夠即時計算關節角度與身體重心（COM）變化。特別針對短跑（Sprinting）與舉重等週期性運動進行優化，提供逐幀（Frame-by-Frame）的量化數據。
 
