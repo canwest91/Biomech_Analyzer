@@ -3,10 +3,9 @@ import tempfile
 import cv2
 import time
 import numpy as np
-from core.geometry import calculate_angle, OneEuroFilter # <--- 加入 OneEuroFilter
 import os
-from ultralytics import YOLO  # <--- 核心改變：改用 YOLO
-from core.geometry import calculate_angle
+from ultralytics import YOLO
+from core.geometry import calculate_angle, OneEuroFilter
 from core.visualizer import draw_analysis_overlay
 
 # --- 1. 系統設定 ---
@@ -16,7 +15,7 @@ st.set_page_config(layout="wide", page_title="Coach's Eye Pro (YOLOv8 Edition)")
 if 'result_video_path' not in st.session_state: st.session_state.result_video_path = None
 if 'frame_index' not in st.session_state: st.session_state.frame_index = 0
 
-# --- CSS 優化 (保持賽博龐克風格) ---
+# --- CSS 優化 ---
 st.markdown("""
 <style>
     .stApp { background-color: #0E1117; color: #FAFAFA; }
@@ -35,31 +34,27 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- 2. YOLO 專用關節設定 (COCO 17 Keypoints) ---
-# YOLO 的 ID 跟 MediaPipe 完全不同，請參考 COCO 格式：
-# 0:鼻 5:左肩 6:右肩 11:左髖 12:右髖 13:左膝 14:右膝 15:左踝 16:右踝
-# 注意：YOLO 沒有腳尖點，所以無法計算精確的踝關節角度，這裡移除了踝關節選項
 JOINT_CONFIG = {
     # 下肢
-    "右膝 (R. Knee)":    (12, 14, 16, (147, 112, 219)), # 右髖-右膝-右踝
-    "左膝 (L. Knee)":     (11, 13, 15, (255, 165, 0)),   # 左髖-左膝-左踝
-    "右髖 (R. Hip)":      (6, 12, 14, (147, 112, 219)),  # 右肩-右髖-右膝
-    "左髖 (L. Hip)":      (5, 11, 13, (255, 165, 0)),    # 左肩-左髖-左膝
-    
+    "右膝 (R. Knee)":    (12, 14, 16, (147, 112, 219)),
+    "左膝 (L. Knee)":     (11, 13, 15, (255, 165, 0)),
+    "右髖 (R. Hip)":      (6, 12, 14, (147, 112, 219)),
+    "左髖 (L. Hip)":      (5, 11, 13, (255, 165, 0)),
     # 上肢
-    "右肘 (R. Elbow)":    (6, 8, 10, (147, 112, 219)),   # 右肩-右肘-右腕
-    "左肘 (L. Elbow)":    (5, 7, 9, (255, 165, 0)),      # 左肩-左肘-左腕
-    "右肩 (R. Shoulder)": (8, 6, 12, (147, 112, 219)),   # 右肘-右肩-右髖
-    "左肩 (L. Shoulder)": (7, 5, 11, (255, 165, 0)),     # 左肘-左肩-左髖
+    "右肘 (R. Elbow)":    (6, 8, 10, (147, 112, 219)),
+    "左肘 (L. Elbow)":    (5, 7, 9, (255, 165, 0)),
+    "右肩 (R. Shoulder)": (8, 6, 12, (147, 112, 219)),
+    "左肩 (L. Shoulder)": (7, 5, 11, (255, 165, 0)),
 }
 
 # --- 初始化 YOLO 模型 ---
-# 第一次執行會自動下載 'yolov8n-pose.pt' (Nano版，速度最快)
 @st.cache_resource
 def load_model():
     return YOLO('yolov8n-pose.pt')
 
 model = load_model()
 
+# --- 核心分析引擎 (整合 YOLO + OneEuroFilter) ---
 def run_analysis_pipeline(input_path, output_path, selected_joints, progress_bar, status_text):
     cap = cv2.VideoCapture(input_path)
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -70,9 +65,7 @@ def run_analysis_pipeline(input_path, output_path, selected_joints, progress_bar
     fourcc = cv2.VideoWriter_fourcc(*'mp4v') 
     out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
     
-    # --- 初始化濾波器字典 ---
-    # 每個關節的每個座標 (x, y) 都需要一個獨立的濾波器
-    # 結構: filters[關節名稱] = {'p1_x': Filter, 'p1_y': Filter, ...}
+    # 初始化濾波器字典
     filters = {}
     
     frame_count = 0
@@ -91,9 +84,8 @@ def run_analysis_pipeline(input_path, output_path, selected_joints, progress_bar
             for joint_name in selected_joints:
                 p1_idx, p2_idx, p3_idx, color = JOINT_CONFIG[joint_name]
                 
-                # 確保該關節名稱有在濾波器字典中
+                # 初始化該關節的濾波器 (若尚未存在)
                 if joint_name not in filters:
-                    # 參數設定: min_cutoff=1.0 (慢速抖動過濾), beta=0.05 (快速反應)
                     f_params = {'min_cutoff': 0.5, 'beta': 0.2} 
                     filters[joint_name] = {
                         'p1x': OneEuroFilter(frame_count, kpts[p1_idx][0], **f_params),
@@ -104,23 +96,20 @@ def run_analysis_pipeline(input_path, output_path, selected_joints, progress_bar
                         'p3y': OneEuroFilter(frame_count, kpts[p3_idx][1], **f_params),
                     }
                 
+                # 信心度檢查
                 if (confs[p1_idx] > 0.5 and confs[p2_idx] > 0.5 and confs[p3_idx] > 0.5):
-                    # 取得原始座標
                     raw_p1 = (kpts[p1_idx][0], kpts[p1_idx][1])
                     raw_p2 = (kpts[p2_idx][0], kpts[p2_idx][1])
                     raw_p3 = (kpts[p3_idx][0], kpts[p3_idx][1])
                     
-                    # --- 執行濾波 (Smoothing) ---
-                    # 將當前時間 (frame_count) 與原始數據傳入，取得平滑後數據
+                    # 執行濾波 (Smoothing)
                     f = filters[joint_name]
                     smooth_p1 = (f['p1x'](frame_count, raw_p1[0]), f['p1y'](frame_count, raw_p1[1]))
                     smooth_p2 = (f['p2x'](frame_count, raw_p2[0]), f['p2y'](frame_count, raw_p2[1]))
                     smooth_p3 = (f['p3x'](frame_count, raw_p3[0]), f['p3y'](frame_count, raw_p3[1]))
                     
-                    # 使用平滑後的座標計算角度
+                    # 計算角度與繪圖
                     angle = calculate_angle(smooth_p1, smooth_p2, smooth_p3)
-                    
-                    # 繪圖 (使用平滑座標)
                     frame = draw_analysis_overlay(frame, smooth_p1, smooth_p2, smooth_p3, angle, color=color)
 
         out.write(frame)
@@ -129,7 +118,7 @@ def run_analysis_pipeline(input_path, output_path, selected_joints, progress_bar
         if total_frames > 0:
             progress = min(frame_count / total_frames, 1.0)
             progress_bar.progress(progress)
-            status_text.text(f"YOLO 精確分析中 (OneEuro濾波)... {int(progress*100)}%")
+            status_text.text(f"AI 精確分析中 (OneEuro濾波)... {int(progress*100)}%")
 
     cap.release()
     out.release()
@@ -166,7 +155,7 @@ if uploaded_file:
         prog_bar.empty()
         st.session_state.frame_index = 0 
 
-# --- 3. 智慧播放器 (Smart Player) - 保持不變 ---
+# --- 3. 智慧播放器 (Smart Player) ---
 if st.session_state.result_video_path and os.path.exists(st.session_state.result_video_path):
     st.divider()
     cap = cv2.VideoCapture(st.session_state.result_video_path)
@@ -188,8 +177,10 @@ if st.session_state.result_video_path and os.path.exists(st.session_state.result
 
     with col1:
         image_spot = st.empty()
+        slider_placeholder = st.empty()
         
         if not is_playing:
+            # 暫停模式：顯示滑桿與靜態圖
             st.session_state.frame_index = st.slider(
                 "Frame Scrubber", 0, total_frames-1, st.session_state.frame_index, label_visibility="collapsed"
             )
@@ -200,26 +191,44 @@ if st.session_state.result_video_path and os.path.exists(st.session_state.result
                 image_spot.image(frame, channels="RGB", use_container_width=True)
                 
         else:
-            slider_placeholder = st.empty()
+            # 播放模式：執行優化迴圈
             while is_playing:
                 start_time = time.time()
+                
+                # 讀取
                 cap.set(cv2.CAP_PROP_POS_FRAMES, st.session_state.frame_index)
                 ret, frame = cap.read()
                 if not ret:
-                    st.session_state.frame_index = 0
+                    st.session_state.frame_index = 0 # 循環播放
                     break
                 
+                # 轉色
                 frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                image_spot.image(frame, channels="RGB", use_container_width=True)
+
+                # 顯示優化 (降維打擊：寬度大於800則縮小顯示，大幅降低延遲)
+                h, w = frame.shape[:2]
+                if w > 800:
+                    display_scale = 800 / w
+                    frame_display = cv2.resize(frame, (0, 0), fx=display_scale, fy=display_scale, interpolation=cv2.INTER_AREA)
+                else:
+                    frame_display = frame
+
+                image_spot.image(frame_display, channels="RGB", use_container_width=True)
+                
+                # 更新進度
                 slider_placeholder.progress(st.session_state.frame_index / max(1, total_frames - 1))
                 
                 st.session_state.frame_index += 1
-                if st.session_state.frame_index >= total_frames: st.session_state.frame_index = 0
+                if st.session_state.frame_index >= total_frames:
+                    st.session_state.frame_index = 0
                 
+                # 智慧延遲
                 process_time = time.time() - start_time
                 target_interval = 1.0 / (fps * playback_speed)
                 wait_time = max(0, target_interval - process_time)
                 time.sleep(wait_time)
+                
     cap.release()
+
 elif not uploaded_file:
     st.info("👈 請先上傳影片，並點擊「開始分析」。(Powered by YOLOv8)")
