@@ -1,12 +1,3 @@
-這是一個非常關鍵的步驟！對於一個工程師來說，`README.md` 就是你這個專案的「門面」與「說明書」。
-
-既然你是以 **運動科學工程師** 的身份開發這個專案，且未來可能將其作為作品集（Portfolio），這份 README 應該要展現出 **「技術深度 (Computer Vision)」** 與 **「運動科學專業 (Biomechanics)」** 的結合。
-
-這裡有一份我為你量身打造的模板，您可以直接複製貼上到 `README.md` 檔案中，然後根據需要微調。
-
------
-
-### 📝 推薦的 README.md 模板 (請直接複製)
 
 ````markdown
 # 🏃 Coach's Eye Pro: AI-Powered Biomechanics Analysis
