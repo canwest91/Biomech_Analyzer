@@ -3,6 +3,7 @@ import tempfile
 import cv2
 import time
 import numpy as np
+from core.geometry import calculate_angle, OneEuroFilter # <--- 加入 OneEuroFilter
 import os
 from ultralytics import YOLO  # <--- 核心改變：改用 YOLO
 from core.geometry import calculate_angle
@@ -59,7 +60,6 @@ def load_model():
 
 model = load_model()
 
-# --- 核心：背景分析引擎 (YOLO版) ---
 def run_analysis_pipeline(input_path, output_path, selected_joints, progress_bar, status_text):
     cap = cv2.VideoCapture(input_path)
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -70,54 +70,66 @@ def run_analysis_pipeline(input_path, output_path, selected_joints, progress_bar
     fourcc = cv2.VideoWriter_fourcc(*'mp4v') 
     out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
     
+    # --- 初始化濾波器字典 ---
+    # 每個關節的每個座標 (x, y) 都需要一個獨立的濾波器
+    # 結構: filters[關節名稱] = {'p1_x': Filter, 'p1_y': Filter, ...}
+    filters = {}
+    
     frame_count = 0
     while cap.isOpened():
         ret, frame = cap.read()
         if not ret: break
         
-        # 1. YOLO 推論 (verbose=False 關閉終端機洗版)
+        # 1. YOLO 推論
         results = model(frame, verbose=False)
         
-        # 取得關鍵點 (Keypoints)
-        # results[0] 是第一張圖, keypoints.xy 是座標, cpu().numpy() 轉成陣列
-        # shape: (num_people, 17, 2)
         if len(results[0].keypoints) > 0:
-            # 預設抓第一個人 (Index 0)
             kpts = results[0].keypoints.xy.cpu().numpy()[0]
-            confs = results[0].keypoints.conf.cpu().numpy()[0] # 信心分數
+            confs = results[0].keypoints.conf.cpu().numpy()[0] 
             
-            # 2. 繪圖 (直接畫在 frame 上)
-            # YOLO 原生繪圖有點雜，我們用自己的 visualizer 保持風格統一
-            
-            # 先畫基礎骨架連線 (簡化版，只畫四肢)
-            # 為了效能與美觀，這裡我們只畫分析的關節連線，或者你可以自己定義 skeleton 連線
-            # 這裡簡單畫所有關鍵點
-            for i, (x, y) in enumerate(kpts):
-                if confs[i] > 0.5: # 只有信心度 > 0.5 才畫
-                    cv2.circle(frame, (int(x), int(y)), 3, (200, 200, 200), -1)
-
-            # 3. 計算並繪製角度
+            # 2. 處理每個選擇的關節
             for joint_name in selected_joints:
                 p1_idx, p2_idx, p3_idx, color = JOINT_CONFIG[joint_name]
                 
-                # 檢查這三個點的信心度是否都足夠
+                # 確保該關節名稱有在濾波器字典中
+                if joint_name not in filters:
+                    # 參數設定: min_cutoff=1.0 (慢速抖動過濾), beta=0.05 (快速反應)
+                    f_params = {'min_cutoff': 0.5, 'beta': 0.2} 
+                    filters[joint_name] = {
+                        'p1x': OneEuroFilter(frame_count, kpts[p1_idx][0], **f_params),
+                        'p1y': OneEuroFilter(frame_count, kpts[p1_idx][1], **f_params),
+                        'p2x': OneEuroFilter(frame_count, kpts[p2_idx][0], **f_params),
+                        'p2y': OneEuroFilter(frame_count, kpts[p2_idx][1], **f_params),
+                        'p3x': OneEuroFilter(frame_count, kpts[p3_idx][0], **f_params),
+                        'p3y': OneEuroFilter(frame_count, kpts[p3_idx][1], **f_params),
+                    }
+                
                 if (confs[p1_idx] > 0.5 and confs[p2_idx] > 0.5 and confs[p3_idx] > 0.5):
-                    # YOLO 輸出的座標直接就是像素 (Pixel)，不需要再乘 width/height
-                    p1 = (int(kpts[p1_idx][0]), int(kpts[p1_idx][1]))
-                    p2 = (int(kpts[p2_idx][0]), int(kpts[p2_idx][1]))
-                    p3 = (int(kpts[p3_idx][0]), int(kpts[p3_idx][1]))
+                    # 取得原始座標
+                    raw_p1 = (kpts[p1_idx][0], kpts[p1_idx][1])
+                    raw_p2 = (kpts[p2_idx][0], kpts[p2_idx][1])
+                    raw_p3 = (kpts[p3_idx][0], kpts[p3_idx][1])
                     
-                    angle = calculate_angle(p1, p2, p3)
-                    frame = draw_analysis_overlay(frame, p1, p2, p3, angle, color=color)
+                    # --- 執行濾波 (Smoothing) ---
+                    # 將當前時間 (frame_count) 與原始數據傳入，取得平滑後數據
+                    f = filters[joint_name]
+                    smooth_p1 = (f['p1x'](frame_count, raw_p1[0]), f['p1y'](frame_count, raw_p1[1]))
+                    smooth_p2 = (f['p2x'](frame_count, raw_p2[0]), f['p2y'](frame_count, raw_p2[1]))
+                    smooth_p3 = (f['p3x'](frame_count, raw_p3[0]), f['p3y'](frame_count, raw_p3[1]))
+                    
+                    # 使用平滑後的座標計算角度
+                    angle = calculate_angle(smooth_p1, smooth_p2, smooth_p3)
+                    
+                    # 繪圖 (使用平滑座標)
+                    frame = draw_analysis_overlay(frame, smooth_p1, smooth_p2, smooth_p3, angle, color=color)
 
         out.write(frame)
         
         frame_count += 1
-        # 避免除以零
         if total_frames > 0:
             progress = min(frame_count / total_frames, 1.0)
             progress_bar.progress(progress)
-            status_text.text(f"YOLO 分析中... {int(progress*100)}%")
+            status_text.text(f"YOLO 精確分析中 (OneEuro濾波)... {int(progress*100)}%")
 
     cap.release()
     out.release()
