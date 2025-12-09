@@ -216,7 +216,7 @@ if mode == "📁 影片分析":
                 break
             
             # 呼叫處理函數 (這是最花時間的步驟)
-            processed_image, angle_data = process_frame(frame, height, width)
+            processed_image, angle_data = process_frame(frame)
             
             image_placeholder.image(processed_image, channels="RGB", use_container_width=True)
             
