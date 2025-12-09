@@ -92,7 +92,7 @@ JOINT_CONFIG = {
 mp_pose = mp.solutions.pose
 pose = mp_pose.Pose(
     static_image_mode=False, 
-    model_complexity=1, 
+    model_complexity=0, # <--- 改用 0 (Lite) 提升速度，若覺得不準可改回 1
     min_detection_confidence=0.5, 
     min_tracking_confidence=0.5
 )
@@ -117,13 +117,23 @@ selected_joints = st.sidebar.multiselect(
 st.sidebar.markdown("---")
 
 # --- 3. 主邏輯 ---
-st.title("🏃 Coach's Eye: 運動生物力學分析")
+st.title("運動生物力學分析")
 col1, col2 = st.columns([3, 1])
 image_placeholder = col1.empty() 
 data_placeholder = col2.empty() 
 
-def process_frame(frame, height, width):
-    """處理單一影格的通用函數"""
+def process_frame(frame):
+    """處理單一影格 (包含自動縮放優化)"""
+    # 取得原始尺寸
+    h, w = frame.shape[:2]
+    
+    # === 效能優化關鍵：如果圖片太大，就縮小來算 ===
+    # 限制最大寬度為 640px (對於姿勢分析來說通常夠用了)
+    if w > 640:
+        scale = 640 / w
+        frame = cv2.resize(frame, (0, 0), fx=scale, fy=scale)
+        h, w = frame.shape[:2] # 更新尺寸
+
     image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     image.flags.writeable = False
     results = pose.process(image)
@@ -132,7 +142,6 @@ def process_frame(frame, height, width):
     angle_data = {} 
 
     if results.pose_landmarks:
-        # 繪製基礎骨架
         mp_drawing.draw_landmarks(
             image, results.pose_landmarks, mp_pose.POSE_CONNECTIONS,
             mp_drawing.DrawingSpec(color=(245,117,66), thickness=2, circle_radius=2),
@@ -141,13 +150,13 @@ def process_frame(frame, height, width):
         
         landmarks = results.pose_landmarks.landmark
         
-        # 根據勾選的關節進行計算與繪圖
         for joint_name in selected_joints:
             p1_id, p2_id, p3_id, color = JOINT_CONFIG[joint_name]
             try:
-                p1 = get_landmark_coords(landmarks, (height, width, 3), p1_id)
-                p2 = get_landmark_coords(landmarks, (height, width, 3), p2_id)
-                p3 = get_landmark_coords(landmarks, (height, width, 3), p3_id)
+                # 這裡傳入新的 h, w 確保座標正確
+                p1 = get_landmark_coords(landmarks, (h, w, 3), p1_id)
+                p2 = get_landmark_coords(landmarks, (h, w, 3), p2_id)
+                p3 = get_landmark_coords(landmarks, (h, w, 3), p3_id)
                 
                 angle = calculate_angle(p1, p2, p3)
                 angle_data[joint_name] = int(angle)
