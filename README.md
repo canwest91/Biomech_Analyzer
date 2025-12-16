@@ -8,7 +8,8 @@
 > **A professional-grade, high-performance motion analysis platform combining Python's flexibility with WebGL's speed.** > 專為運動員與教練設計的 AI 動作捕捉分析平台，實現 60FPS 零延遲的即時骨架疊加與生物力學數據分析。
 
 ![Project Demo](https://via.placeholder.com/800x400?text=Please+Replace+With+Your+App+Screenshot)
-*(建議在此處放一張您程式運作時的 GIF 或截圖，展示雙視窗與圖表)*
+![Uploading image.png…]()
+
 
 ---
 
