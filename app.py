@@ -2,10 +2,10 @@ import streamlit as st
 import streamlit.components.v1 as components
 import base64
 import tempfile
-import os
+import json # 新增 json 用於處理陣列傳遞
 
 # --- 1. 系統設定 ---
-st.set_page_config(layout="wide", page_title="Coach's Eye: Final", page_icon="🏆")
+st.set_page_config(layout="wide", page_title="Coach's Eye: Multi-Joint", page_icon="🧬")
 
 # CSS 美化
 st.markdown("""
@@ -15,7 +15,6 @@ st.markdown("""
     .stButton>button { 
         background-color: #238636; color: white; border: none; font-weight: bold;
     }
-    #MainMenu {visibility: hidden;} footer {visibility: hidden;} header {visibility: hidden;}
     iframe { width: 100% !important; }
 </style>
 """, unsafe_allow_html=True)
@@ -26,8 +25,8 @@ def get_video_base64(file_path):
         data = f.read()
         return base64.b64encode(data).decode()
 
-# --- 3. HTML/JS 播放器模板 (佈局調整版) ---
-def get_html_player(video_base64, joint_part, display_mode, trail_target):
+# --- 3. HTML/JS 播放器模板 (支援多選陣列) ---
+def get_html_player(video_base64, joint_parts_json, display_mode, trail_target):
     return f"""
 <!DOCTYPE html>
 <html>
@@ -40,17 +39,15 @@ def get_html_player(video_base64, joint_part, display_mode, trail_target):
     <style>
         body {{ margin: 0; background-color: #0d1117; color: #c9d1d9; font-family: 'Segoe UI', sans-serif; overflow-y: auto; padding-bottom: 20px; }}
         
-        /* 視覺工作區 */
         .workspace {{ display: flex; gap: 20px; width: 100%; margin-bottom: 20px; height: 500px; }}
         .view-container {{ flex: 1; background: #000; position: relative; border-radius: 12px; border: 1px solid #30363d; display: flex; align-items: center; justify-content: center; overflow: hidden; }}
         .view-title {{ position: absolute; top: 15px; left: 15px; background: rgba(0,0,0,0.7); padding: 6px 12px; border-radius: 6px; font-size: 14px; z-index: 10; pointer-events: none; color: white; }}
         canvas {{ position: absolute; width: 100%; height: 100%; object-fit: contain; }}
         
-        /* 控制區 (播放器) */
         .controls-panel {{ background: #161b22; padding: 15px; border-radius: 12px; border: 1px solid #30363d; margin-top: 10px; }}
         .playback-row {{ display: flex; gap: 15px; align-items: center; }}
         
-        /* 導出區 (新樣式) */
+        /* 導出區 */
         .export-panel {{ background: #161b22; padding: 15px; border-radius: 12px; border: 1px solid #30363d; margin-top: 20px; display: flex; align-items: center; justify-content: flex-end; gap: 15px; }}
         
         button {{ background: #238636; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 14px; white-space: nowrap; transition: background 0.2s; }}
@@ -59,11 +56,10 @@ def get_html_player(video_base64, joint_part, display_mode, trail_target):
         button.download-btn {{ background: #1f6feb; }}
         input[type="range"] {{ flex: 1; accent-color: #238636; cursor: pointer; height: 8px; }}
         
-        /* 圖表區 */
         .charts-wrapper {{ display: flex; flex-direction: column; gap: 15px; margin-top: 15px; }}
         .chart-card {{ background: #161b22; border-radius: 12px; border: 1px solid #30363d; padding: 15px; height: 240px; position: relative; }}
         .chart-header {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; font-size: 14px; color: #8b949e; }}
-        .live-value {{ color: #fff; font-family: monospace; font-size: 16px; font-weight: bold; }}
+        .live-value {{ color: #fff; font-family: monospace; font-size: 14px; font-weight: bold; }}
     </style>
 </head>
 <body>
@@ -93,8 +89,8 @@ def get_html_player(video_base64, joint_part, display_mode, trail_target):
     <div class="charts-wrapper">
         <div class="chart-card">
             <div class="chart-header">
-                <span>📐 關節角度 (X軸: 秒數)</span>
-                <span id="currentAngleVal" class="live-value">--°</span>
+                <span>📐 多關節角度分析 (Multi-Joint Angles)</span>
+                <span id="currentAngleVal" class="live-value" style="text-align: right;">--</span>
             </div>
             <div style="position: relative; height: 200px; width: 100%">
                 <canvas id="angleChart"></canvas>
@@ -124,7 +120,8 @@ def get_html_player(video_base64, joint_part, display_mode, trail_target):
     </div>
 
     <script>
-        const CONFIG_PART = "{joint_part}";
+        // 接收 Python 傳來的陣列字串 (JSON 格式)
+        const CONFIG_PARTS = JSON.parse('{joint_parts_json}'); // e.g. ["Knee", "Hip"]
         const CONFIG_MODE = "{display_mode}";
         const CONFIG_TRAIL = "{trail_target}";
 
@@ -160,6 +157,12 @@ def get_html_player(video_base64, joint_part, display_mode, trail_target):
             "Shoulder": {{ "R": [14, 12, 24], "L": [13, 11, 23] }}
         }};
 
+        // 配色表：為每個關節定義基本色，左右用深淺或色相區分
+        const COLORS = {{
+            "R": {{ "Knee": "#00E676", "Hip": "#00B0FF", "Elbow": "#00E5FF", "Shoulder": "#1DE9B6" }}, // 冷色系
+            "L": {{ "Knee": "#FF4081", "Hip": "#FF9100", "Elbow": "#FF5252", "Shoulder": "#FFC400" }}  // 暖色系
+        }};
+
         const TRAIL_MAP = {{
             "R.Ankle": 28, "L.Ankle": 27, "R.Knee": 26, "L.Knee": 25,
             "R.Hip": 24, "L.Hip": 23, "R.Elbow": 14, "L.Elbow": 13,
@@ -174,38 +177,31 @@ def get_html_player(video_base64, joint_part, display_mode, trail_target):
             responsive: true, maintainAspectRatio: false, animation: false,
             interaction: {{ mode: 'nearest', axis: 'x', intersect: false }},
             scales: {{
-                x: {{
-                    type: 'linear', 
-                    display: true,
-                    grid: {{ color: '#30363d' }},
-                    ticks: {{ color: '#8b949e', callback: function(value){{ return value.toFixed(1) + 's'; }} }}
-                }},
+                x: {{ type: 'linear', display: true, grid: {{ color: '#30363d' }}, ticks: {{ color: '#8b949e', callback: v => v.toFixed(1)+'s' }} }},
                 y: {{ grid: {{ color: '#30363d' }}, ticks: {{ color: '#8b949e' }} }}
             }},
             plugins: {{
-                legend: {{ labels: {{ color: 'white' }} }},
-                annotation: {{
-                    annotations: {{
-                        line1: {{ 
-                            type: 'line', xMin: 0, xMax: 0,
-                            borderColor: 'rgba(255, 255, 255, 0.5)', borderWidth: 2, borderDash: [5, 5],
-                        }}
-                    }}
-                }}
+                legend: {{ labels: {{ color: 'white', boxWidth: 12, font: {{size: 11}} }} }},
+                annotation: {{ annotations: {{ line1: {{ type: 'line', xMin: 0, xMax: 0, borderColor: 'rgba(255,255,255,0.5)', borderWidth: 2, borderDash: [5,5] }} }} }}
             }}
         }};
 
         function initCharts() {{
             const ctxAngle = document.getElementById('angleChart').getContext('2d');
             let angleDatasets = [];
-            if (CONFIG_MODE === "Compare") {{
-                angleDatasets.push({{ label: '右側', data: [], borderColor: '#00E676', borderWidth: 2, pointRadius: 0, tension: 0.1 }});
-                angleDatasets.push({{ label: '左側', data: [], borderColor: '#FF4081', borderWidth: 2, pointRadius: 0, tension: 0.1 }});
-            }} else {{
-                const color = (CONFIG_MODE === "Left") ? '#FF4081' : '#00E676';
-                const label = (CONFIG_MODE === "Left") ? '左側' : '右側';
-                angleDatasets.push({{ label: label, data: [], borderColor: color, borderWidth: 2, pointRadius: 0, tension: 0.1 }});
-            }}
+
+            // 根據選取的關節列表動態生成 Dataset
+            CONFIG_PARTS.forEach(part => {{
+                if (CONFIG_MODE === "Compare") {{
+                    angleDatasets.push({{ label: `R.${{part}}`, data: [], borderColor: COLORS["R"][part], borderWidth: 2, pointRadius: 0, tension: 0.1 }});
+                    angleDatasets.push({{ label: `L.${{part}}`, data: [], borderColor: COLORS["L"][part], borderWidth: 2, pointRadius: 0, tension: 0.1 }});
+                }} else {{
+                    const side = (CONFIG_MODE === "Left") ? "L" : "R";
+                    const label = (CONFIG_MODE === "Left") ? "左" : "右";
+                    angleDatasets.push({{ label: `${{label}}.${{part}}`, data: [], borderColor: COLORS[side][part], borderWidth: 2, pointRadius: 0, tension: 0.1 }});
+                }}
+            }});
+
             angleChart = new Chart(ctxAngle, {{ type: 'line', data: {{ datasets: angleDatasets }}, options: commonOptions }});
 
             const ctxCom = document.getElementById('comChart').getContext('2d');
@@ -237,7 +233,8 @@ def get_html_player(video_base64, joint_part, display_mode, trail_target):
             ctxBlueprint.fillStyle = "black"; ctxBlueprint.fillRect(0, 0, blueprintCanvas.width, blueprintCanvas.height);
 
             const currentTime = parseFloat(video.currentTime.toFixed(2));
-            let newData = {{ time: currentTime, angleR: null, angleL: null, comY: null }};
+            // 動態建立數據結構： newData = {{ time: 1.2, comY: 100, R_Knee: 160, L_Knee: 150, ... }}
+            let newData = {{ time: currentTime, comY: null }};
 
             if (results.poseLandmarks) {{
                 const lm = results.poseLandmarks;
@@ -249,6 +246,7 @@ def get_html_player(video_base64, joint_part, display_mode, trail_target):
                 drawConnectors(ctxBlueprint, lm, POSE_CONNECTIONS, styleLine);
                 drawLandmarks(ctxBlueprint, lm, stylePoint);
 
+                // --- COM & Trail ---
                 let pt = null;
                 if (CONFIG_TRAIL === "COM" && lm[24] && lm[23]) {{
                     const cx = (lm[24].x + lm[23].x) / 2;
@@ -274,32 +272,47 @@ def get_html_player(video_base64, joint_part, display_mode, trail_target):
                     }}
                 }}
 
-                const jointData = JOINT_MAP[CONFIG_PART];
-                let sides = [];
-                if (CONFIG_MODE === "Compare") sides = ["R", "L"];
-                else if (CONFIG_MODE === "Right") sides = ["R"];
-                else sides = ["L"];
+                // --- Multi-Joint Angle Calculation ---
+                let displayTexts = [];
+                
+                CONFIG_PARTS.forEach(part => {{
+                    const jointData = JOINT_MAP[part];
+                    let sides = [];
+                    if (CONFIG_MODE === "Compare") sides = ["R", "L"];
+                    else if (CONFIG_MODE === "Right") sides = ["R"];
+                    else sides = ["L"];
 
-                sides.forEach(side => {{
-                    const ids = jointData[side];
-                    if (lm[ids[0]] && lm[ids[1]] && lm[ids[2]]) {{
-                        const ang = calculateAngle(lm[ids[0]], lm[ids[1]], lm[ids[2]]);
-                        if(side==="R") newData.angleR = ang;
-                        if(side==="L") newData.angleL = ang;
+                    sides.forEach(side => {{
+                        const ids = jointData[side];
+                        if (lm[ids[0]] && lm[ids[1]] && lm[ids[2]]) {{
+                            const ang = calculateAngle(lm[ids[0]], lm[ids[1]], lm[ids[2]]);
+                            
+                            // 儲存數據: Key 例如 "R_Knee"
+                            newData[`${{side}}_${{part}}`] = ang;
+                            displayTexts.push(`${{side}}.${{part}}: ${{ang}}°`);
 
-                        const center = lm[ids[1]];
-                        const txtX = center.x * overlayCanvas.width + (side === "R" ? 15 : -55);
-                        const txtY = center.y * overlayCanvas.height;
-                        const fontSize = Math.max(20, Math.floor(overlayCanvas.width / 45));
-                        const color = side === "R" ? "#00E676" : "#FF4081";
-                        [ctxOverlay, ctxBlueprint].forEach(ctx => {{
-                            ctx.font = `bold ${{fontSize}}px Arial`; ctx.fillStyle = color; ctx.strokeStyle = "black"; ctx.lineWidth = 3;
-                            ctx.strokeText(ang + "°", txtX, txtY); ctx.fillText(ang + "°", txtX, txtY);
-                        }});
-                    }}
+                            // 繪製文字
+                            const center = lm[ids[1]];
+                            // 簡單錯位避免重疊：依據部位不同給予不同偏移
+                            let xOffset = (side === "R" ? 15 : -65);
+                            let yOffset = 0;
+                            // 如果選多個部位，可微調 yOffset 避免擠在一起 (這裡簡化處理)
+                            
+                            const txtX = center.x * overlayCanvas.width + xOffset;
+                            const txtY = center.y * overlayCanvas.height + yOffset;
+                            const fontSize = Math.max(18, Math.floor(overlayCanvas.width / 50));
+                            const color = COLORS[side][part];
+                            
+                            [ctxOverlay, ctxBlueprint].forEach(ctx => {{
+                                ctx.font = `bold ${{fontSize}}px Arial`; ctx.fillStyle = color; ctx.strokeStyle = "black"; ctx.lineWidth = 3;
+                                ctx.strokeText(ang + "°", txtX, txtY); ctx.fillText(ang + "°", txtX, txtY);
+                            }});
+                        }}
+                    }});
                 }});
 
-                currentAngleVal.innerText = (newData.angleR||"--") + " / " + (newData.angleL||"--") + "°";
+                // --- Update UI ---
+                currentAngleVal.innerText = displayTexts.join(" | ");
                 if(newData.comY) currentComVal.innerText = newData.comY + " px";
 
                 if (!video.paused) {{
@@ -322,13 +335,20 @@ def get_html_player(video_base64, joint_part, display_mode, trail_target):
                 avgComVal.innerText = Math.round(avgCom);
 
                 if(sortedData.length > 0) {{
-                    if (CONFIG_MODE === "Compare") {{
-                        angleChart.data.datasets[0].data = sortedData.map(d => ({{x: d.time, y: d.angleR}}));
-                        angleChart.data.datasets[1].data = sortedData.map(d => ({{x: d.time, y: d.angleL}}));
-                    }} else {{
-                        const val = (CONFIG_MODE === "Right") ? "angleR" : "angleL";
-                        angleChart.data.datasets[0].data = sortedData.map(d => ({{x: d.time, y: d[val]}}));
-                    }}
+                    // 更新角度圖表 Datasets
+                    // 注意：這裡我們需要依照 initCharts 時建立 dataset 的順序來推數據
+                    let dsIndex = 0;
+                    CONFIG_PARTS.forEach(part => {{
+                        if (CONFIG_MODE === "Compare") {{
+                            // R
+                            angleChart.data.datasets[dsIndex++].data = sortedData.map(d => ({{x: d.time, y: d[`R_${{part}}`]}}));
+                            // L
+                            angleChart.data.datasets[dsIndex++].data = sortedData.map(d => ({{x: d.time, y: d[`L_${{part}}`]}}));
+                        }} else {{
+                            const side = (CONFIG_MODE === "Left") ? "L" : "R";
+                            angleChart.data.datasets[dsIndex++].data = sortedData.map(d => ({{x: d.time, y: d[`${{side}}_${{part}}`]}}));
+                        }}
+                    }});
                     
                     comChart.data.datasets[0].data = sortedData.map(d => ({{x: d.time, y: d.comY}}));
                     comChart.data.datasets[1].data = sortedData.map(d => ({{x: d.time, y: avgCom}}));
@@ -381,14 +401,36 @@ def get_html_player(video_base64, joint_part, display_mode, trail_target):
         }};
         progressBar.onchange = () => {{ isScrubbing = false; if(!video.paused) renderFrame(); }};
 
+        // CSV 下載邏輯升級：支援動態欄位
         downloadCsvBtn.onclick = () => {{
             const sortedData = Array.from(dataStore.values()).sort((a, b) => a.time - b.time);
             if (sortedData.length === 0) {{ alert("沒有數據！"); return; }}
-            let csv = "Time(s),Right_Angle,Left_Angle,COM_Height_px\\n";
-            sortedData.forEach(r => {{ csv += `${{r.time}},${{r.angleR||''}},${{r.angleL||''}},${{r.comY||''}}\\n`; }});
+            
+            // 動態產生 Header
+            let headers = ["Time(s)", "COM_Height_px"];
+            CONFIG_PARTS.forEach(part => {{
+                if(CONFIG_MODE === "Compare") {{ headers.push(`R_${{part}}`, `L_${{part}}`); }}
+                else {{ headers.push(`${{CONFIG_MODE === "Left" ? "L" : "R"}}_${{part}}`); }}
+            }});
+            
+            let csv = headers.join(",") + "\\n";
+            
+            sortedData.forEach(r => {{
+                let row = [r.time, r.comY || ''];
+                CONFIG_PARTS.forEach(part => {{
+                    if(CONFIG_MODE === "Compare") {{
+                        row.push(r[`R_${{part}}`] || '', r[`L_${{part}}`] || '');
+                    }} else {{
+                        const side = (CONFIG_MODE === "Left") ? "L" : "R";
+                        row.push(r[`${{side}}_${{part}}`] || '');
+                    }}
+                }});
+                csv += row.join(",") + "\\n";
+            }});
+            
             const link = document.createElement("a");
             link.href = "data:text/csv;charset=utf-8," + encodeURI(csv);
-            link.download = "biomech_data.csv";
+            link.download = "biomech_multi_joint_data.csv";
             link.click();
         }};
 
@@ -422,16 +464,36 @@ def get_html_player(video_base64, joint_part, display_mode, trail_target):
 
 # --- 4. 主程式介面 ---
 
-st.sidebar.title("參數設定")
+st.sidebar.title("🎛️ 參數設定")
 uploaded_file = st.sidebar.file_uploader("1. 上傳影片", type=['mp4', 'mov', 'avi'])
 
 st.sidebar.markdown("---")
-st.sidebar.subheader("2. 分析設定")
-joint_options = {"膝蓋 (Knee)": "Knee", "髖部 (Hip)": "Hip", "手肘 (Elbow)": "Elbow", "肩膀 (Shoulder)": "Shoulder"}
-selected_joint_label = st.sidebar.selectbox("選擇分析部位:", list(joint_options.keys()))
-selected_joint = joint_options[selected_joint_label]
+st.sidebar.subheader("2. 分析設定 (多選)")
 
-mode_options = {"右側 (Right Only)": "Right", "左側 (Left Only)": "Left", "左右對照 (Compare L/R)": "Compare"}
+joint_options = {
+    "膝蓋 (Knee)": "Knee", 
+    "髖部 (Hip)": "Hip", 
+    "手肘 (Elbow)": "Elbow", 
+    "肩膀 (Shoulder)": "Shoulder"
+}
+
+# [升級點 1] 改為 multiselect，預設選 Knee
+selected_joint_labels = st.sidebar.multiselect(
+    "選擇分析部位 (可複選):", 
+    list(joint_options.keys()), 
+    default=["膝蓋 (Knee)"]
+)
+# 轉換為對應的 Key 列表，例如 ["Knee", "Hip"]
+selected_joints = [joint_options[label] for label in selected_joint_labels]
+
+# 將 Python 列表轉換為 JSON 字串傳給 JS
+selected_joints_json = json.dumps(selected_joints)
+
+mode_options = {
+    "右側 (Right Only)": "Right", 
+    "左側 (Left Only)": "Left", 
+    "左右對照 (Compare L/R)": "Compare"
+}
 selected_mode_label = st.sidebar.selectbox("顯示模式:", list(mode_options.keys()))
 selected_mode = mode_options[selected_mode_label]
 
@@ -447,18 +509,23 @@ trail_options = {
 selected_trail_label = st.sidebar.selectbox("軌跡追蹤目標:", list(trail_options.keys()), index=0)
 selected_trail = trail_options[selected_trail_label]
 
-st.title("劉昱昇的動作捕捉系統 : DEMO")
+st.title("劉昱昇動作捕捉分析demo")
 
 if uploaded_file:
-    tfile = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') 
-    tfile.write(uploaded_file.read())
-    
-    with st.spinner("建立分析..."):
-        video_b64 = get_video_base64(tfile.name)
-        html_code = get_html_player(video_b64, selected_joint, selected_mode, selected_trail)
+    # 確保有選至少一個關節，否則可能會出錯
+    if not selected_joints:
+        st.warning("請至少選擇一個分析部位")
+    else:
+        tfile = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') 
+        tfile.write(uploaded_file.read())
+        
+        with st.spinner("建立多關節分析引擎..."):
+            video_b64 = get_video_base64(tfile.name)
+            # 傳遞 JSON 格式的陣列
+            html_code = get_html_player(video_b64, selected_joints_json, selected_mode, selected_trail)
 
-
-    components.html(html_code, height=1600)
+        st.success(f"✅ 分析就緒: {', '.join(selected_joint_labels)} | {selected_mode_label}")
+        components.html(html_code, height=1600)
 
 else:
-    st.info("請先從左側上傳影片。")
+    st.info("請先從左側上傳影片並調整參數。")
