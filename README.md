@@ -6,11 +6,6 @@
 [![Chart.js](https://img.shields.io/badge/Chart.js-FF6384?style=for-the-badge&logo=chartdotjs&logoColor=white)](https://www.chartjs.org/)
 
 > **A professional-grade, high-performance motion analysis platform combining Python's flexibility with WebGL's speed.** > 專為運動員與教練設計的 AI 動作捕捉分析平台，實現 60FPS 零延遲的即時骨架疊加與生物力學數據分析。
-
-![Project Demo](https://via.placeholder.com/800x400?text=Please+Replace+With+Your+App+Screenshot)
-![Uploading image.png…]()
-
-
 ---
 
 ## 📖 Introduction (專案介紹)
