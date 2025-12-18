@@ -5,15 +5,29 @@ import tempfile
 import json
 
 # --- 1. 系統設定 ---
-st.set_page_config(layout="wide", page_title="Coach's Eye: Capture", page_icon="📸")
+st.set_page_config(layout="wide", page_title="Coach's Eye: Pro Speed", page_icon="🚀")
 
-# CSS 美化
+# CSS 強制設定
 st.markdown("""
 <style>
-    .stApp { background-color: #0D1117; color: #C9D1D9; }
-    [data-testid="stSidebar"] { background-color: #161B22; border-right: 1px solid #30363D; }
-    .stButton>button { background-color: #238636; color: white; border: none; font-weight: bold; }
-    iframe { width: 100% !important; }
+    body { overflow: hidden; }
+    .stApp { background-color: #0D1117; color: #C9D1D9; height: 100vh; overflow: hidden; }
+    
+    .block-container { 
+        padding: 0 !important; 
+        max-width: 100% !important; 
+    }
+    
+    header { background-color: transparent !important; }
+    footer { visibility: hidden; height: 0px !important; }
+    
+    [data-testid="stSidebar"] { 
+        background-color: #161B22; 
+        border-right: 1px solid #30363D; 
+        padding-top: 1rem;
+    }
+    
+    iframe { width: 100% !important; height: 100vh !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -23,8 +37,8 @@ def get_video_base64(file_path):
         data = f.read()
         return base64.b64encode(data).decode()
 
-# --- 3. HTML/JS 播放器模板 (含截圖功能) ---
-def get_html_player(video_base64, joint_parts_json, display_mode, trail_target):
+# --- 3. HTML/JS 播放器模板 ---
+def get_html_player(video_base64, joint_parts_json, display_mode, trail_target, user_height):
     return f"""
 <!DOCTYPE html>
 <html>
@@ -37,126 +51,132 @@ def get_html_player(video_base64, joint_parts_json, display_mode, trail_target):
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
     
     <style>
-        body {{ margin: 0; background-color: #0d1117; color: #c9d1d9; font-family: 'Segoe UI', sans-serif; overflow-y: auto; padding-bottom: 20px; }}
+        body {{ margin: 0; background-color: #0d1117; color: #c9d1d9; font-family: 'Segoe UI', sans-serif; height: 100vh; width: 100vw; overflow: hidden; }}
         
-        .workspace {{ display: flex; gap: 20px; width: 100%; margin-bottom: 20px; height: 500px; }}
-        .view-container {{ flex: 1; background: #000; position: relative; border-radius: 12px; border: 1px solid #30363d; display: flex; align-items: center; justify-content: center; overflow: hidden; }}
-        .view-title {{ position: absolute; top: 15px; left: 15px; background: rgba(0,0,0,0.7); padding: 6px 12px; border-radius: 6px; font-size: 14px; z-index: 10; pointer-events: none; color: white; }}
+        #dashboard-container {{ display: flex; height: 100%; width: 100%; gap: 8px; padding: 8px; box-sizing: border-box; }}
+        #left-panel {{ flex: 55; display: flex; flex-direction: column; gap: 8px; height: 100%; min-width: 0; }}
+        #right-panel {{ flex: 45; display: flex; flex-direction: column; gap: 8px; height: 100%; min-width: 0; }}
+
+        /* 影片區 */
+        .workspace {{ display: flex; flex-direction: column; gap: 8px; flex: 85; min-height: 0; }}
+        .view-container {{ flex: 1; background: #000; position: relative; border-radius: 8px; border: 1px solid #30363d; display: flex; align-items: center; justify-content: center; overflow: hidden; }}
+        .view-title {{ position: absolute; top: 5px; left: 5px; background: rgba(0,0,0,0.6); padding: 2px 6px; border-radius: 4px; font-size: 11px; color: #eee; pointer-events: none; }}
         canvas {{ position: absolute; width: 100%; height: 100%; object-fit: contain; }}
         
-        .controls-panel {{ background: #161b22; padding: 15px; border-radius: 12px; border: 1px solid #30363d; margin-top: 10px; }}
-        .playback-row {{ display: flex; gap: 15px; align-items: center; }}
+        /* 控制區 */
+        .controls-wrapper {{ background: #161b22; padding: 8px; border-radius: 8px; border: 1px solid #30363d; flex: 15; display: flex; flex-direction: column; justify-content: center; gap: 5px; min-height: 0; }}
+        .playback-row {{ display: flex; gap: 8px; align-items: center; }}
+        .export-row {{ display: flex; align-items: center; justify-content: space-between; gap: 8px; }}
         
-        /* 導出區按鈕樣式 */
-        .export-panel {{ background: #161b22; padding: 15px; border-radius: 12px; border: 1px solid #30363d; margin-top: 20px; display: flex; align-items: center; justify-content: flex-end; gap: 15px; }}
+        /* 圖表區 */
+        .chart-card {{ background: #161b22; border-radius: 8px; border: 1px solid #30363d; padding: 5px 8px; flex: 1; min-height: 0; display: flex; flex-direction: column; }}
+        .chart-container {{ flex: 1; position: relative; width: 100%; min-height: 0; }}
+        .chart-header {{ display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: #8b949e; height: 18px; margin-bottom: 2px; }}
+        .header-left {{ display: flex; gap: 5px; align-items: center; }}
+        .live-value {{ color: #fff; font-family: monospace; font-size: 13px; font-weight: bold; }}
         
-        button {{ background: #238636; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 14px; white-space: nowrap; transition: background 0.2s; }}
+        button {{ background: #238636; color: white; border: none; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 11px; white-space: nowrap; }}
         button:hover {{ background: #2ea043; }}
-        
-        /* 特殊功能按鈕顏色 */
-        button.record-btn {{ background: #da3633; }}
-        button.download-btn {{ background: #1f6feb; }}
-        button.snapshot-btn {{ background: #d29922; color: black; }} /* 金色截圖鍵 */
-        
-        /* 圖表上的小按鈕 */
-        button.chart-tool-btn {{ background: #30363d; font-size: 12px; padding: 4px 10px; border: 1px solid #8b949e; color: #c9d1d9; }}
-        button.chart-tool-btn:hover {{ background: #58a6ff; border-color: #58a6ff; color: white; }}
-        
-        input[type="range"] {{ flex: 1; accent-color: #238636; cursor: pointer; height: 8px; }}
-        
-        .charts-wrapper {{ display: flex; flex-direction: column; gap: 15px; margin-top: 15px; }}
-        .chart-card {{ background: #161b22; border-radius: 12px; border: 1px solid #30363d; padding: 15px; height: 220px; position: relative; }}
-        .chart-header {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; font-size: 14px; color: #8b949e; }}
-        .header-left {{ display: flex; gap: 10px; align-items: center; }}
-        .live-value {{ color: #fff; font-family: monospace; font-size: 14px; font-weight: bold; }}
+        button.auto-export-btn {{ background: linear-gradient(90deg, #8957e5, #b355e6); color: white; flex: 1; }}
+        button.icon-btn {{ background: #30363d; color: #c9d1d9; border: 1px solid #8b949e; }}
+        input[type="range"] {{ flex: 1; accent-color: #238636; cursor: pointer; height: 5px; }}
+        #compositionCanvas {{ display: none; }}
     </style>
 </head>
 <body>
     <video id="sourceVideo" style="display:none" playsinline muted>
         <source src="data:video/mp4;base64,{video_base64}" type="video/mp4">
     </video>
+    <canvas id="compositionCanvas"></canvas>
 
-    <div class="workspace" id="workspace">
-        <div class="view-container">
-            <div class="view-title">Blueprint (Skeleton)</div>
-            <canvas id="blueprintCanvas"></canvas>
-        </div>
-        <div class="view-container">
-            <div class="view-title">Video Overlay</div>
-            <canvas id="overlayCanvas"></canvas>
-        </div>
-    </div>
-
-    <div class="controls-panel">
-        <div class="playback-row">
-            <button id="playBtn">▶ 播放</button>
-            <input type="range" id="progressBar" value="0" min="0" max="100" step="0.1">
-            <span id="timeDisplay" style="font-family: monospace; font-size: 16px;">00.00s</span>
-        </div>
-    </div>
-
-    <div class="charts-wrapper">
-        <div class="chart-card">
-            <div class="chart-header">
-                <div class="header-left">
-                    <span>📐 關節角度</span>
-                    <button class="chart-tool-btn" onclick="resetZoom(angleChart)">🔍 重置</button>
-                    <button class="chart-tool-btn" onclick="saveChart(angleChart, 'angle_chart.png')">💾 存圖</button>
+    <div id="dashboard-container">
+        <div id="left-panel">
+            <div class="workspace">
+                <div class="view-container">
+                    <div class="view-title">Blueprint</div>
+                    <canvas id="blueprintCanvas"></canvas>
                 </div>
-                <span id="currentAngleVal" class="live-value">--°</span>
-            </div>
-            <div style="position: relative; height: 180px; width: 100%"><canvas id="angleChart"></canvas></div>
-        </div>
-
-        <div class="chart-card">
-            <div class="chart-header">
-                <div class="header-left">
-                    <span>⚡ 角速度</span>
-                    <button class="chart-tool-btn" onclick="resetZoom(velocityChart)">🔍 重置</button>
-                    <button class="chart-tool-btn" onclick="saveChart(velocityChart, 'velocity_chart.png')">💾 存圖</button>
+                <div class="view-container">
+                    <div class="view-title">Video Overlay</div>
+                    <canvas id="overlayCanvas"></canvas>
                 </div>
-                <span id="currentVelVal" class="live-value" style="color: #00E5FF;">-- deg/s</span>
             </div>
-            <div style="position: relative; height: 180px; width: 100%"><canvas id="velocityChart"></canvas></div>
-        </div>
 
-        <div class="chart-card">
-            <div class="chart-header">
-                <div class="header-left">
-                    <span>🟡 重心垂直振幅</span>
-                    <button class="chart-tool-btn" onclick="resetZoom(comChart)">🔍 重置</button>
-                    <button class="chart-tool-btn" onclick="saveChart(comChart, 'com_chart.png')">💾 存圖</button>
+            <div class="controls-wrapper">
+                <div class="playback-row">
+                    <button id="playBtn" style="width: 60px;">▶ Play</button>
+                    <input type="range" id="progressBar" value="0" min="0" max="100" step="0.1">
+                    <span id="timeDisplay" style="font-family: monospace; font-size: 14px; color: #00E676; width: 50px; text-align: right;">0.00s</span>
                 </div>
-                <span id="currentComVal" class="live-value" style="color: #FFD600;">-- px</span>
+                <div class="export-row">
+                    <button id="autoExportBtn" class="auto-export-btn">🎬 生成分析影片 (Auto Export)</button>
+                    <button id="snapshotBtn" class="icon-btn">📷 截圖</button>
+                    <button id="downloadCsvBtn" class="icon-btn">📊 數據</button>
+                </div>
             </div>
-            <div style="position: relative; height: 180px; width: 100%"><canvas id="comChart"></canvas></div>
         </div>
-    </div>
 
-    <div class="export-panel">
-        <span style="color: #8b949e; font-size: 14px; margin-right: auto;">📥 導出工具：</span>
-        <button id="snapshotBtn" class="snapshot-btn">📷 畫面截圖 (Overlay)</button>
-        <button id="downloadCsvBtn" class="download-btn">📊 下載數據 (.csv)</button>
-        <button id="recordBtn" class="record-btn">🔴 錄製分析影片</button>
+        <div id="right-panel">
+            <div class="chart-card">
+                <div class="chart-header">
+                    <div class="header-left">
+                        <span>📐 Angle</span>
+                        <button class="icon-btn" style="padding: 1px 5px; font-size: 10px;" onclick="resetZoom(angleChart)">⟲</button>
+                    </div>
+                    <span id="currentAngleVal" class="live-value">--°</span>
+                </div>
+                <div class="chart-container"><canvas id="angleChart"></canvas></div>
+            </div>
+
+            <div class="chart-card">
+                <div class="chart-header">
+                    <div class="header-left">
+                        <span>🚀 Linear Speed (m/s)</span>
+                        <button class="icon-btn" style="padding: 1px 5px; font-size: 10px;" onclick="resetZoom(velocityChart)">⟲</button>
+                    </div>
+                    <span id="currentVelVal" class="live-value" style="color: #00E5FF;">-- m/s</span>
+                </div>
+                <div class="chart-container"><canvas id="velocityChart"></canvas></div>
+            </div>
+
+            <div class="chart-card">
+                <div class="chart-header">
+                    <div class="header-left">
+                        <span>🟡 COM</span>
+                        <button class="icon-btn" style="padding: 1px 5px; font-size: 10px;" onclick="resetZoom(comChart)">⟲</button>
+                    </div>
+                    <span id="currentComVal" class="live-value" style="color: #FFD600;">-- px</span>
+                </div>
+                <div class="chart-container"><canvas id="comChart"></canvas></div>
+            </div>
+        </div>
     </div>
 
     <script>
         const CONFIG_PARTS = JSON.parse('{joint_parts_json}');
         const CONFIG_MODE = "{display_mode}";
         const CONFIG_TRAIL = "{trail_target}";
+        const REAL_HEIGHT = {user_height};
 
-        let prevData = {{ time: null, angleR: null, angleL: null }};
-        let velocityData = [];
+        // 狀態變數
+        let prevData = {{ time: null, angleR: null, angleL: null, comX: null, comY: null }};
+        let pixelToMeterRatio = null;
+        let maxPixelHeight = 0;
+        let speedBuffer = []; // [New] 速度平滑緩衝區
+        const BUFFER_SIZE = 6; // 平滑窗口大小 (數值越大越平滑但延遲越高)
 
         const video = document.getElementById('sourceVideo');
         const overlayCanvas = document.getElementById('overlayCanvas');
         const blueprintCanvas = document.getElementById('blueprintCanvas');
         const ctxOverlay = overlayCanvas.getContext('2d');
         const ctxBlueprint = blueprintCanvas.getContext('2d');
+        const compositionCanvas = document.getElementById('compositionCanvas');
+        const ctxComp = compositionCanvas.getContext('2d');
+        
+        let compWidth, compHeight, singleVideoWidth, singleVideoHeight;
         const playBtn = document.getElementById('playBtn');
         const progressBar = document.getElementById('progressBar');
         const timeDisplay = document.getElementById('timeDisplay');
-        
         const currentAngleVal = document.getElementById('currentAngleVal');
         const currentVelVal = document.getElementById('currentVelVal');
         const currentComVal = document.getElementById('currentComVal');
@@ -167,14 +187,12 @@ def get_html_player(video_base64, joint_parts_json, display_mode, trail_target):
         const MAX_TRAIL_LEN = 40;
         let dataStore = new Map();
         let comValues = [];
-        let isRecording = false; let mediaRecorder; let recordedChunks = [];
+        let isExporting = false; 
+        let mediaRecorder; 
+        let recordedChunks = [];
+        const autoExportBtn = document.getElementById('autoExportBtn');
 
-        const JOINT_MAP = {{
-            "Knee":     {{ "R": [24, 26, 28], "L": [23, 25, 27] }},
-            "Hip":      {{ "R": [12, 24, 26], "L": [11, 23, 25] }},
-            "Elbow":    {{ "R": [12, 14, 16], "L": [11, 13, 15] }},
-            "Shoulder": {{ "R": [14, 12, 24], "L": [13, 11, 23] }}
-        }};
+        const JOINT_MAP = {{ "Knee": {{ "R": [24, 26, 28], "L": [23, 25, 27] }}, "Hip": {{ "R": [12, 24, 26], "L": [11, 23, 25] }}, "Elbow": {{ "R": [12, 14, 16], "L": [11, 13, 15] }}, "Shoulder": {{ "R": [14, 12, 24], "L": [13, 11, 23] }} }};
         const COLORS = {{ "R": {{ "Knee": "#00E676", "Hip": "#00B0FF", "Elbow": "#00E5FF", "Shoulder": "#1DE9B6" }}, "L": {{ "Knee": "#FF4081", "Hip": "#FF9100", "Elbow": "#FF5252", "Shoulder": "#FFC400" }} }};
         const TRAIL_MAP = {{ "R.Ankle": 28, "L.Ankle": 27, "R.Knee": 26, "L.Knee": 25, "R.Hip": 24, "L.Hip": 23, "R.Elbow": 14, "L.Elbow": 13, "Head": 0, "COM": "COM" }};
 
@@ -185,12 +203,8 @@ def get_html_player(video_base64, joint_parts_json, display_mode, trail_target):
         const commonOptions = {{
             responsive: true, maintainAspectRatio: false, animation: false,
             interaction: {{ mode: 'nearest', axis: 'x', intersect: false }},
-            scales: {{ x: {{ type: 'linear', display: true, grid: {{ color: '#30363d' }}, ticks: {{ color: '#8b949e', callback: v=>v.toFixed(1)+'s' }} }}, y: {{ grid: {{ color: '#30363d' }}, ticks: {{ color: '#8b949e' }} }} }},
-            plugins: {{ 
-                legend: {{ labels: {{ color: 'white' }} }}, 
-                annotation: {{ annotations: {{ line1: {{ type: 'line', xMin: 0, xMax: 0, borderColor: 'rgba(255,255,255,0.5)', borderWidth: 2, borderDash: [5,5] }} }} }},
-                zoom: {{ pan: {{ enabled: true, mode: 'x' }}, zoom: {{ wheel: {{ enabled: true }}, pinch: {{ enabled: true }}, mode: 'x' }} }}
-            }}
+            scales: {{ x: {{ type: 'linear', display: true, grid: {{ color: '#30363d', lineWidth: 0.5 }}, ticks: {{ color: '#8b949e', font: {{size: 10}}, callback: v=>v.toFixed(1)+'s' }} }}, y: {{ grid: {{ color: '#30363d', lineWidth: 0.5 }}, ticks: {{ color: '#8b949e', font: {{size: 10}} }} }} }},
+            plugins: {{ legend: {{ labels: {{ color: 'white', font: {{size: 10}}, boxWidth: 10 }} }}, annotation: {{ annotations: {{ line1: {{ type: 'line', xMin: 0, xMax: 0, borderColor: 'rgba(255,255,255,0.8)', borderWidth: 2, borderDash: [0,0] }} }} }}, zoom: {{ pan: {{ enabled: true, mode: 'x' }}, zoom: {{ wheel: {{ enabled: true }}, pinch: {{ enabled: true }}, mode: 'x' }} }} }}
         }};
 
         function initCharts() {{
@@ -199,75 +213,40 @@ def get_html_player(video_base64, joint_parts_json, display_mode, trail_target):
             const ctxCom = document.getElementById('comChart').getContext('2d');
             
             let angleDatasets = [];
-            let velDatasets = [];
-
             CONFIG_PARTS.forEach(part => {{
                 if (CONFIG_MODE === "Compare") {{
-                    angleDatasets.push({{ label: `R.${{part}}`, data: [], borderColor: COLORS["R"][part], borderWidth: 2, pointRadius: 0, tension: 0.1 }});
-                    angleDatasets.push({{ label: `L.${{part}}`, data: [], borderColor: COLORS["L"][part], borderWidth: 2, pointRadius: 0, tension: 0.1 }});
-                    velDatasets.push({{ label: `R Vel`, data: [], borderColor: COLORS["R"][part], borderWidth: 1, pointRadius: 0, tension: 0.2, borderDash: [2,2] }});
-                    velDatasets.push({{ label: `L Vel`, data: [], borderColor: COLORS["L"][part], borderWidth: 1, pointRadius: 0, tension: 0.2, borderDash: [2,2] }});
+                    angleDatasets.push({{ label: `R.${{part}}`, data: [], borderColor: COLORS["R"][part], borderWidth: 1.5, pointRadius: 0, tension: 0.1 }});
+                    angleDatasets.push({{ label: `L.${{part}}`, data: [], borderColor: COLORS["L"][part], borderWidth: 1.5, pointRadius: 0, tension: 0.1 }});
                 }} else {{
                     const side = (CONFIG_MODE === "Left") ? "L" : "R";
-                    angleDatasets.push({{ label: `${{side}}.${{part}}`, data: [], borderColor: COLORS[side][part], borderWidth: 2, pointRadius: 0, tension: 0.1 }});
-                    velDatasets.push({{ label: `${{side}} Vel`, data: [], borderColor: COLORS[side][part], borderWidth: 1, pointRadius: 0, tension: 0.2, borderDash: [2,2] }});
+                    angleDatasets.push({{ label: `${{side}}.${{part}}`, data: [], borderColor: COLORS[side][part], borderWidth: 1.5, pointRadius: 0, tension: 0.1 }});
                 }}
             }});
-
             angleChart = new Chart(ctxAngle, {{ type: 'line', data: {{ datasets: angleDatasets }}, options: commonOptions }});
-            velocityChart = new Chart(ctxVel, {{ type: 'line', data: {{ datasets: velDatasets }}, options: commonOptions }});
-            comChart = new Chart(ctxCom, {{ type: 'scatter', data: {{ datasets: [{{ label: '重心 (COM)', data: [], backgroundColor: '#FFD600', pointRadius: 2 }}, {{ type: 'line', label: 'Avg', data: [], borderColor: '#FF4081', borderWidth: 1, borderDash: [5,5], pointRadius: 0 }}] }}, options: commonOptions }});
+            
+            // 速度圖表
+            velocityChart = new Chart(ctxVel, {{ 
+                type: 'line', 
+                data: {{ datasets: [{{ label: 'Speed (m/s)', data: [], borderColor: '#00E5FF', borderWidth: 1.5, pointRadius: 0, tension: 0.3 }}] }}, 
+                options: commonOptions 
+            }});
+            
+            comChart = new Chart(ctxCom, {{ type: 'scatter', data: {{ datasets: [{{ label: 'COM', data: [], borderColor: '#FFD600', pointRadius: 1.5 }}, {{ type: 'line', label: 'Avg', data: [], borderColor: '#FF4081', borderWidth: 1, borderDash: [5,5], pointRadius: 0 }}] }}, options: commonOptions }});
         }}
         initCharts();
-
-        // [新增] 儲存圖表 (存成有深色背景的圖片，防止白字看不見)
-        window.saveChart = function(chart, fileName) {{
-            const canvas = chart.canvas;
-            // 創建一個臨時 canvas 來繪製背景色
-            const tempCanvas = document.createElement('canvas');
-            tempCanvas.width = canvas.width;
-            tempCanvas.height = canvas.height;
-            const ctx = tempCanvas.getContext('2d');
-            
-            // 填充背景色 (深色模式背景 #161b22)
-            ctx.fillStyle = '#161b22';
-            ctx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
-            // 繪製原圖表
-            ctx.drawImage(canvas, 0, 0);
-            
-            // 下載
-            const link = document.createElement('a');
-            link.download = fileName;
-            link.href = tempCanvas.toDataURL('image/png');
-            link.click();
-        }};
-
         window.resetZoom = function(chart) {{ chart.resetZoom(); }};
-
-        // [新增] 儲存截圖 (Overlay Snapshot)
-        document.getElementById('snapshotBtn').onclick = () => {{
-            const link = document.createElement('a');
-            const timeStr = video.currentTime.toFixed(2).replace('.', '_');
-            link.download = `snapshot_${{timeStr}}s.png`;
-            link.href = overlayCanvas.toDataURL('image/png');
-            link.click();
-        }};
 
         function calculateAngle(a, b, c) {{
             const rad = Math.atan2(c.y - b.y, c.x - b.x) - Math.atan2(a.y - b.y, a.x - b.x);
-            let ang = Math.abs(rad * 180.0 / Math.PI);
-            if (ang > 180.0) ang = 360 - ang;
-            return parseInt(ang);
+            let ang = Math.abs(rad * 180.0 / Math.PI); if (ang > 180.0) ang = 360 - ang; return parseInt(ang);
         }}
 
         function onResults(results) {{
-            overlayCanvas.width = video.videoWidth; overlayCanvas.height = video.videoHeight;
-            blueprintCanvas.width = video.videoWidth; blueprintCanvas.height = video.videoHeight;
             ctxOverlay.drawImage(results.image, 0, 0, overlayCanvas.width, overlayCanvas.height);
             ctxBlueprint.fillStyle = "black"; ctxBlueprint.fillRect(0, 0, blueprintCanvas.width, blueprintCanvas.height);
 
             const currentTime = parseFloat(video.currentTime.toFixed(2));
-            let newData = {{ time: currentTime, comY: null }};
+            let newData = {{ time: currentTime, comY: null, comX: null }};
 
             if (results.poseLandmarks) {{
                 const lm = results.poseLandmarks;
@@ -278,26 +257,64 @@ def get_html_player(video_base64, joint_parts_json, display_mode, trail_target):
                 drawConnectors(ctxBlueprint, lm, POSE_CONNECTIONS, styleLine);
                 drawLandmarks(ctxBlueprint, lm, stylePoint);
 
-                let pt = null;
-                if (CONFIG_TRAIL === "COM" && lm[24] && lm[23]) {{
-                    const cx = (lm[24].x + lm[23].x) / 2; const cy = (lm[24].y + lm[23].y) / 2;
-                    pt = {{x: cx * overlayCanvas.width, y: cy * overlayCanvas.height}};
-                    newData.comY = Math.round(overlayCanvas.height - pt.y);
-                    ctxOverlay.beginPath(); ctxOverlay.arc(pt.x, pt.y, 8, 0, 2*Math.PI); ctxOverlay.fillStyle = "#FF4081"; ctxOverlay.fill();
-                }} else if (CONFIG_TRAIL !== "None") {{
-                    const idx = TRAIL_MAP[CONFIG_TRAIL];
-                    if (lm[idx]) pt = {{x: lm[idx].x * overlayCanvas.width, y: lm[idx].y * overlayCanvas.height}};
+                // --- 1. 自動校正 (PPM 計算) ---
+                const headY = lm[0].y * overlayCanvas.height;
+                const ankleY = ((lm[27].y + lm[28].y) / 2) * overlayCanvas.height;
+                const currentPxHeight = Math.abs(ankleY - headY);
+                if (currentPxHeight > maxPixelHeight) {{
+                    maxPixelHeight = currentPxHeight;
+                    pixelToMeterRatio = maxPixelHeight / REAL_HEIGHT;
                 }}
-                if (pt) {{
-                    trailQueue.push(pt); if (trailQueue.length > MAX_TRAIL_LEN) trailQueue.shift();
-                    for (let i = 1; i < trailQueue.length; i++) {{
-                        ctxOverlay.beginPath(); ctxOverlay.moveTo(trailQueue[i-1].x, trailQueue[i-1].y);
-                        ctxOverlay.lineTo(trailQueue[i].x, trailQueue[i].y);
-                        ctxOverlay.strokeStyle = (CONFIG_TRAIL === "COM") ? `rgba(255, 64, 129, ${{i/trailQueue.length}})` : `rgba(255, 215, 0, ${{i/trailQueue.length}})`;
-                        ctxOverlay.lineWidth = 4; ctxOverlay.stroke();
+
+                // --- 2. COM (重心) ---
+                if (lm[23] && lm[24]) {{
+                    const cx = (lm[23].x + lm[24].x) / 2; 
+                    const cy = (lm[23].y + lm[24].y) / 2;
+                    newData.comX = cx * overlayCanvas.width;
+                    newData.comY = cy * overlayCanvas.height;
+                    
+                    if (CONFIG_TRAIL === "COM") {{
+                        ctxOverlay.beginPath(); ctxOverlay.arc(newData.comX, newData.comY, 8, 0, 2*Math.PI); ctxOverlay.fillStyle = "#FF4081"; ctxOverlay.fill();
+                        trailQueue.push({{x: newData.comX, y: newData.comY}}); 
+                        if(trailQueue.length > MAX_TRAIL_LEN) trailQueue.shift();
+                        if (trailQueue.length > 1) {{
+                            ctxOverlay.beginPath(); ctxOverlay.moveTo(trailQueue[0].x, trailQueue[0].y);
+                            for (let i = 1; i < trailQueue.length; i++) ctxOverlay.lineTo(trailQueue[i].x, trailQueue[i].y);
+                            ctxOverlay.strokeStyle = "#FFD600"; ctxOverlay.lineWidth = 4; ctxOverlay.stroke();
+                        }}
                     }}
                 }}
 
+                // --- 3. 速度計算 (物理引擎 V = d/t) ---
+                let speedMps = 0;
+                
+                // 只有在數據有效且已經有上一幀數據時才計算
+                if (pixelToMeterRatio && newData.comX !== null && prevData.comX !== null && currentTime !== prevData.time) {{
+                    const dt = currentTime - prevData.time; // 秒 (時間差)
+                    
+                    if (dt > 0.01) {{ // 避免時間差過小導致除以零或無限大
+                        const dx = newData.comX - prevData.comX;
+                        const dy = newData.comY - prevData.comY;
+                        const distPx = Math.sqrt(dx*dx + dy*dy); // 像素位移
+                        
+                        // [雜訊閘]：如果移動小於 2 像素，視為靜止
+                        if (distPx > 2) {{
+                            const distM = distPx / pixelToMeterRatio; // 位移 (公尺)
+                            const rawSpeed = distM / dt; // 原始速度 (m/s)
+                            
+                            // [平滑化]：加入緩衝區計算移動平均
+                            speedBuffer.push(rawSpeed);
+                            if (speedBuffer.length > BUFFER_SIZE) speedBuffer.shift();
+                            const sum = speedBuffer.reduce((a, b) => a + b, 0);
+                            speedMps = sum / speedBuffer.length;
+                        }} else {{
+                            speedMps = 0;
+                            speedBuffer = []; // 重置緩衝
+                        }}
+                    }}
+                }}
+                
+                // --- 4. 角度 ---
                 let displayTexts = [];
                 CONFIG_PARTS.forEach(part => {{
                     const jointData = JOINT_MAP[part];
@@ -308,7 +325,6 @@ def get_html_player(video_base64, joint_parts_json, display_mode, trail_target):
                             const ang = calculateAngle(lm[ids[0]], lm[ids[1]], lm[ids[2]]);
                             newData[`${{side}}_${{part}}`] = ang;
                             displayTexts.push(`${{side}}:${{ang}}`);
-                            
                             const center = lm[ids[1]];
                             const txtX = center.x * overlayCanvas.width + (side === "R" ? 15 : -65);
                             const txtY = center.y * overlayCanvas.height;
@@ -320,37 +336,24 @@ def get_html_player(video_base64, joint_parts_json, display_mode, trail_target):
                         }}
                     }});
                 }});
+
+                // 更新 UI
                 currentAngleVal.innerText = displayTexts.join(" | ");
+                currentVelVal.innerText = speedMps.toFixed(2) + " m/s"; // 顯示公尺/秒
                 if(newData.comY) currentComVal.innerText = newData.comY + " px";
 
-                const mainPart = CONFIG_PARTS[0]; 
-                newData.angleR = newData[`R_${{mainPart}}`] || null;
-                newData.angleL = newData[`L_${{mainPart}}`] || null;
-                let velR = 0, velL = 0;
-                
-                if (prevData.time !== null && newData.time !== prevData.time) {{
-                    const dt = newData.time - prevData.time;
-                    if (dt > 0 && newData.angleR !== null && prevData.angleR !== null) {{
-                        velR = (newData.angleR - prevData.angleR) / dt;
-                    }}
-                    if (dt > 0 && newData.angleL !== null && prevData.angleL !== null) {{
-                        velL = (newData.angleL - prevData.angleL) / dt;
-                    }}
-                }}
-                if (!video.paused) prevData = {{ ...newData }};
-                currentVelVal.innerText = `${{Math.round(velR)}} / ${{Math.round(velL)}} deg/s`;
-                newData.velR = velR; newData.velL = velL;
-
                 if (!video.paused) {{
-                    dataStore.set(currentTime.toFixed(2), newData);
+                    prevData = {{ ...newData }};
+                    dataStore.set(currentTime.toFixed(2), {{ ...newData, speed: speedMps }});
                     if(newData.comY) {{ comValues.push(newData.comY); if (comValues.length > 200) comValues.shift(); }}
                 }}
 
                 const sortedData = Array.from(dataStore.values()).sort((a, b) => a.time - b.time);
                 
                 [angleChart, velocityChart, comChart].forEach(c => {{
-                    c.options.plugins.annotation.annotations.line1.xMin = currentTime;
-                    c.options.plugins.annotation.annotations.line1.xMax = currentTime;
+                    c.options.scales.x.min = 0; c.options.scales.x.max = video.duration || 10;
+                    c.options.plugins.annotation.annotations.line1.xMin = currentTime; c.options.plugins.annotation.annotations.line1.xMax = currentTime;
+                    c.update('none');
                 }});
 
                 const avgCom = comValues.length > 0 ? (comValues.reduce((a,b)=>a+b,0)/comValues.length) : 0;
@@ -367,22 +370,13 @@ def get_html_player(video_base64, joint_parts_json, display_mode, trail_target):
                         }}
                     }});
                     
-                    if (CONFIG_MODE === "Compare") {{
-                        velocityChart.data.datasets[0].data = sortedData.map(d => ({{x: d.time, y: d.velR}}));
-                        velocityChart.data.datasets[1].data = sortedData.map(d => ({{x: d.time, y: d.velL}}));
-                    }} else {{
-                        const val = (CONFIG_MODE === "Left") ? "velL" : "velR";
-                        velocityChart.data.datasets[0].data = sortedData.map(d => ({{x: d.time, y: d[val]}}));
-                    }}
+                    // [關鍵] 更新速度圖表 (m/s)
+                    velocityChart.data.datasets[0].data = sortedData.map(d => ({{x: d.time, y: d.speed}}));
 
                     comChart.data.datasets[0].data = sortedData.map(d => ({{x: d.time, y: d.comY}}));
                     comChart.data.datasets[1].data = sortedData.map(d => ({{x: d.time, y: avgCom}}));
                     
-                    const xMin = Math.max(0, currentTime - 3); const xMax = Math.max(5, currentTime + 2);
-                    
-                    [angleChart, velocityChart, comChart].forEach(c => {{ 
-                        c.update('none'); 
-                    }});
+                    [angleChart, velocityChart, comChart].forEach(c => {{ c.update('none'); }});
                 }}
             }}
             
@@ -394,51 +388,75 @@ def get_html_player(video_base64, joint_parts_json, display_mode, trail_target):
 
         function adjustLayout() {{
             if (video.videoWidth) {{
-                const ratio = video.videoWidth / video.videoHeight;
-                workspace.style.height = Math.min(((document.body.clientWidth-40)/2)/ratio, 600) + 'px';
+                singleVideoWidth = video.videoWidth; singleVideoHeight = video.videoHeight;
+                compWidth = singleVideoWidth * 2; compHeight = singleVideoHeight * 2; 
+                compositionCanvas.width = compWidth; compositionCanvas.height = compHeight;
+                overlayCanvas.width = singleVideoWidth; overlayCanvas.height = singleVideoHeight;
+                blueprintCanvas.width = singleVideoWidth; blueprintCanvas.height = singleVideoHeight;
+                [angleChart, velocityChart, comChart].forEach(c => {{ c.options.scales.x.max = video.duration; c.update(); }});
             }}
         }}
         video.onloadedmetadata = () => {{ adjustLayout(); pose.send({{image: video}}); }};
         window.addEventListener('resize', adjustLayout);
 
+        function drawCompositionFrame() {{
+            if (!compWidth || !compHeight) return;
+            ctxComp.fillStyle = '#0d1117'; ctxComp.fillRect(0, 0, compWidth, compHeight);
+            ctxComp.drawImage(blueprintCanvas, 0, 0, singleVideoWidth, singleVideoHeight);
+            ctxComp.drawImage(overlayCanvas, 0, singleVideoHeight, singleVideoWidth, singleVideoHeight);
+            
+            ctxComp.font = 'bold 30px Arial'; ctxComp.fillStyle = 'rgba(255,255,255,0.8)';
+            ctxComp.fillText("Blueprint", 20, 50); ctxComp.fillText("Overlay", 20, singleVideoHeight + 50);
+
+            const eachChartHeight = compHeight / 3; const rightColX = singleVideoWidth;
+            const charts = [
+                {{ canvas: angleChart.canvas, title: "Angle", value: currentAngleVal.innerText, color: "white" }},
+                {{ canvas: velocityChart.canvas, title: "Speed (m/s)", value: currentVelVal.innerText, color: "#00E5FF" }},
+                {{ canvas: comChart.canvas, title: "COM", value: currentComVal.innerText, color: "#FFD600" }}
+            ];
+            charts.forEach((item, idx) => {{
+                const yPos = idx * eachChartHeight;
+                ctxComp.fillStyle = '#161b22'; ctxComp.fillRect(rightColX, yPos, singleVideoWidth, eachChartHeight);
+                ctxComp.drawImage(item.canvas, rightColX, yPos, singleVideoWidth, eachChartHeight);
+                ctxComp.font = 'bold 28px Arial'; ctxComp.fillStyle = '#c9d1d9'; ctxComp.fillText(item.title, rightColX + 20, yPos + 50);
+                ctxComp.font = 'bold 40px monospace'; ctxComp.fillStyle = item.color; ctxComp.textAlign = 'right'; ctxComp.fillText(item.value, compWidth - 20, yPos + 60); ctxComp.textAlign = 'left'; 
+            }});
+            ctxComp.font = 'bold 40px monospace'; ctxComp.fillStyle = '#00E676'; ctxComp.fillText(timeDisplay.innerText, compWidth - 20, 50); 
+        }}
+
         async function renderFrame() {{
             if (video.paused || video.ended) return;
             await pose.send({{image: video}});
+            if (isExporting) drawCompositionFrame();
             animationFrameId = requestAnimationFrame(renderFrame);
         }}
-
-        playBtn.onclick = () => {{
-            if (video.paused) {{ video.play(); renderFrame(); playBtn.innerText = "⏸ 暫停"; }} 
-            else {{ video.pause(); cancelAnimationFrame(animationFrameId); playBtn.innerText = "▶ 播放"; }}
-        }};
-
+        playBtn.onclick = () => {{ if (video.paused) {{ video.play(); renderFrame(); playBtn.innerText = "⏸"; }} else {{ video.pause(); cancelAnimationFrame(animationFrameId); playBtn.innerText = "▶"; }} }};
+        
         let isScrubbing = false;
-        progressBar.oninput = () => {{
-            isScrubbing = true;
-            prevData = {{ time: null, angleR: null, angleL: null }};
-            video.currentTime = (progressBar.value / 100) * video.duration;
-            timeDisplay.innerText = video.currentTime.toFixed(2) + "s";
-            pose.send({{image: video}});
-        }};
+        progressBar.oninput = () => {{ isScrubbing = true; prevData = {{ time: null, angleR: null, angleL: null }}; video.currentTime = (progressBar.value / 100) * video.duration; timeDisplay.innerText = video.currentTime.toFixed(2) + "s"; pose.send({{image: video}}); }};
         progressBar.onchange = () => {{ isScrubbing = false; if(!video.paused) renderFrame(); }};
 
         document.getElementById('downloadCsvBtn').onclick = () => {{
             const arr = Array.from(dataStore.values()).sort((a,b)=>a.time-b.time);
             if(!arr.length) return alert("無數據");
-            let csv = "Time,R_Angle,L_Angle,R_Vel,L_Vel,COM_Y\\n";
-            arr.forEach(r=>{{ csv+=`${{r.time}},${{r.angleR||''}},${{r.angleL||''}},${{r.velR||''}},${{r.velL||''}},${{r.comY||''}}\\n` }});
+            let csv = "Time,Angle,Speed_mps,COM_Y\\n";
+            arr.forEach(r=>{{ csv+=`${{r.time}},${{r.angleR||r.angleL||''}},${{r.speed||0}},${{r.comY||''}}\\n` }});
             const a = document.createElement("a"); a.href="data:text/csv;charset=utf-8,"+encodeURI(csv); a.download="data.csv"; a.click();
         }};
         
-        document.getElementById('recordBtn').onclick = () => {{
-            if (isRecording) {{
-                mediaRecorder.stop(); document.getElementById('recordBtn').innerText = "🔴 錄製分析影片"; document.getElementById('recordBtn').style.background = "#da3633"; isRecording = false;
-            }} else {{
-                const stream = overlayCanvas.captureStream(30); mediaRecorder = new MediaRecorder(stream, {{ mimeType: 'video/webm' }});
-                recordedChunks = []; mediaRecorder.ondataavailable = e => {{ if (e.data.size > 0) recordedChunks.push(e.data); }};
-                mediaRecorder.onstop = () => {{ const blob = new Blob(recordedChunks, {{ type: 'video/webm' }}); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'analysis_video.webm'; a.click(); }};
-                mediaRecorder.start(); video.play(); renderFrame(); playBtn.innerText = "⏸ 暫停"; document.getElementById('recordBtn').innerText = "⏹ 停止錄製"; document.getElementById('recordBtn').style.background = "#bf2c29"; isRecording = true;
-            }}
+        autoExportBtn.onclick = () => {{
+            if (isExporting) return;
+            isExporting = true; autoExportBtn.innerText = "⏳ Recording...";
+            const stream = compositionCanvas.captureStream(60); 
+            mediaRecorder = new MediaRecorder(stream, {{ mimeType: 'video/webm;codecs=vp9', videoBitsPerSecond: 8000000 }});
+            recordedChunks = [];
+            mediaRecorder.ondataavailable = e => {{ if (e.data.size > 0) recordedChunks.push(e.data); }};
+            mediaRecorder.onstop = () => {{
+                const blob = new Blob(recordedChunks, {{ type: 'video/webm' }}); const url = URL.createObjectURL(blob);
+                const a = document.createElement('a'); a.href = url; a.download = 'CoachsEye_Speed_Analysis.webm'; a.click();
+                isExporting = false; autoExportBtn.innerText = "🎬 自動生成影片";
+            }};
+            video.currentTime = 0; video.onseeked = () => {{ video.onseeked = null; mediaRecorder.start(); video.play(); renderFrame(); }}; video.onended = () => {{ mediaRecorder.stop(); video.onended = null; }};
         }};
     </script>
 </body>
@@ -446,38 +464,38 @@ def get_html_player(video_base64, joint_parts_json, display_mode, trail_target):
     """
 
 # --- 4. 主程式介面 ---
-st.sidebar.title("參數設定")
-uploaded_file = st.sidebar.file_uploader("1. 上傳影片", type=['mp4', 'mov', 'avi'])
+st.sidebar.title("Settings")
+uploaded_file = st.sidebar.file_uploader("1. Video", type=['mp4', 'mov', 'avi'])
 
 st.sidebar.markdown("---")
-st.sidebar.subheader("2. 分析設定")
+# [新增] 身高輸入
+reference_height = st.sidebar.number_input("2. Subject Height (m):", min_value=1.0, max_value=2.5, value=1.75, step=0.01)
+
+st.sidebar.markdown("---")
 joint_options = {"膝蓋 (Knee)": "Knee", "髖部 (Hip)": "Hip", "手肘 (Elbow)": "Elbow"}
-selected_joint_labels = st.sidebar.multiselect("選擇分析部位:", list(joint_options.keys()), default=["膝蓋 (Knee)"])
+selected_joint_labels = st.sidebar.multiselect("3. Joint Analysis:", list(joint_options.keys()), default=["膝蓋 (Knee)"])
 selected_joints = [joint_options[label] for label in selected_joint_labels]
 selected_joints_json = json.dumps(selected_joints)
 
 mode_options = {"右側 (Right)": "Right", "左側 (Left)": "Left", "對照 (Compare)": "Compare"}
-selected_mode_label = st.sidebar.selectbox("顯示模式:", list(mode_options.keys()))
+selected_mode_label = st.sidebar.selectbox("4. Side:", list(mode_options.keys()))
 selected_mode = mode_options[selected_mode_label]
 
 st.sidebar.markdown("---")
-st.sidebar.subheader("3. 軌跡")
-trail_options = {"重心": "COM", "無": "None", "右膝": "R.Knee", "右踝": "R.Ankle"}
-selected_trail_label = st.sidebar.selectbox("軌跡目標:", list(trail_options.keys()), index=0)
+trail_options = {"重心": "COM", "無": "None", "右膝": "R.Knee"}
+selected_trail_label = st.sidebar.selectbox("5. Trail:", list(trail_options.keys()), index=0)
 selected_trail = trail_options[selected_trail_label]
-
-st.title("劉昱昇慢吞吞")
 
 if uploaded_file:
     if not selected_joints:
-        st.warning("請選擇至少一個部位")
+        st.warning("Please select a body part.")
     else:
         tfile = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') 
         tfile.write(uploaded_file.read())
-        with st.spinner("載入引擎..."):
+        with st.spinner("Initializing Physics Engine..."):
             video_b64 = get_video_base64(tfile.name)
-            html_code = get_html_player(video_b64, selected_joints_json, selected_mode, selected_trail)
-        
-        components.html(html_code, height=1800)
+            # 傳入 user_height 參數
+            html_code = get_html_player(video_b64, selected_joints_json, selected_mode, selected_trail, reference_height)
+        components.html(html_code, height=1000, scrolling=False) 
 else:
-    st.info("請上傳影片")
+    st.info("👈 Please upload video.")
