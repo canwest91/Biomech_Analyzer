@@ -1,4 +1,4 @@
-# 🧬 Coach's Eye: AI Biomechanics Analyzer
+# 🧬 AI Biomechanics Analyzer
 
 [![Streamlit](https://img.shields.io/badge/Streamlit-FF4B4B?style=for-the-badge&logo=Streamlit&logoColor=white)](https://streamlit.io/)
 [![MediaPipe](https://img.shields.io/badge/MediaPipe-00BFFF?style=for-the-badge&logo=google&logoColor=white)](https://google.github.io/mediapipe/)
@@ -6,10 +6,6 @@
 [![Chart.js](https://img.shields.io/badge/Chart.js-FF6384?style=for-the-badge&logo=chartdotjs&logoColor=white)](https://www.chartjs.org/)
 
 > **A professional-grade, high-performance motion analysis platform combining Python's flexibility with WebGL's speed.** > 專為運動員與教練設計的 AI 動作捕捉分析平台，實現 60FPS 零延遲的即時骨架疊加與生物力學數據分析。
-
-![Project Demo](https://via.placeholder.com/800x400?text=Please+Replace+With+Your+App+Screenshot)
-*(建議在此處放一張您程式運作時的 GIF 或截圖，展示雙視窗與圖表)*
-
 ---
 
 ## 📖 Introduction (專案介紹)
