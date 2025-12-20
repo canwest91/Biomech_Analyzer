@@ -1,4 +1,4 @@
-# 🧬 AI Biomechanics Analyzer
+# 🧬 Coach's Eye: Biomech-Analyzer
 
 [![Streamlit](https://img.shields.io/badge/Streamlit-FF4B4B?style=for-the-badge&logo=Streamlit&logoColor=white)](https://streamlit.io/)
 [![MediaPipe](https://img.shields.io/badge/MediaPipe-00BFFF?style=for-the-badge&logo=google&logoColor=white)](https://google.github.io/mediapipe/)
