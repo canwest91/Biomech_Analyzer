@@ -1,0 +1,75 @@
+// Sprint Analysis System
+digraph Architecture {
+	dpi=300 newrank=true rankdir=LR splines=ortho
+	node [fontname="Microsoft JhengHei" penwidth=1.5 shape=box style="filled, rounded"]
+	edge [arrowsize=0.8 fontname="Microsoft JhengHei" penwidth=1.2]
+	graph [fontname="Microsoft JhengHei" fontsize=14 style="rounded, dashed"]
+	subgraph cluster_0_user {
+		bgcolor=white color="#9E9E9E" label="User Layer (使用者層)"
+		User [label="👤 短跑運動員 / 教練" fillcolor="#F5F5F5"]
+		Browser [label="📱 網頁瀏覽器
+(Chrome/Edge/Mobile)" fillcolor="#E3F2FD"]
+	}
+	subgraph cluster_1_backend {
+		bgcolor="#F3E5F5" color="#8E24AA" label="Backend Layer (Python/Streamlit Server)"
+		UI_Logic [label="🖥️ Streamlit UI 邏輯" fillcolor=white]
+		File_IO [label="📂 檔案處理模組" fillcolor=white]
+		Encoder [label="🔄 Base64 編碼器" fillcolor=white]
+		Config_Mgr [label="⚙️ 參數設定管理" fillcolor=white]
+		Note1 [label="負責非即時任務:
+檔案上傳、介面佈局" fillcolor="#FFEBEE" fontsize=10 shape=note]
+	}
+	subgraph cluster_2_frontend {
+		bgcolor=white color="#1565C0" label="Frontend Layer (Web Native Engine / Client-side)"
+		Bridge [label="🌉 Streamlit Component
+(iframe Bridge)" fillcolor="#FFF9C4" shape=component]
+		subgraph cluster_2_1_ai {
+			bgcolor="#E8EAF6" color="#3F51B5" label="AI Core (MediaPipe)"
+			Pose_Model [label="🧠 MediaPipe Pose
+(WASM)" fillcolor=white]
+			Landmarks [label="📍 33 Keypoints Data" fillcolor=white]
+		}
+		subgraph cluster_2_2_physics {
+			bgcolor="#E8F5E9" color="#2E7D32" label="Biomechanics Logic (JS)"
+			Angle_Calc [label="📐 向量角度運算" fillcolor=white]
+			Vel_Calc [label="⚡ 角速度微分運算" fillcolor=white]
+			COM_Est [label="🟡 重心(COM) 估算" fillcolor=white]
+			GCT_Det [label="⏱️ 觸地時間(GCT) 偵測" fillcolor=white]
+		}
+		subgraph cluster_2_3_viz {
+			bgcolor="#E1F5FE" color="#0277BD" label="Visualization (WebGL/Canvas)"
+			Overlay_Draw [label="🎨 實景疊加 (Overlay)" fillcolor=white]
+			Blueprint_Draw [label="💀 骨架藍圖 (Blueprint)" fillcolor=white]
+			Charts [label="📈 Chart.js 互動圖表" fillcolor=white]
+		}
+		subgraph cluster_2_4_export {
+			bgcolor="#FFF3E0" color="#EF6C00" label="Export Module"
+			Recorder [label="🔴 MediaRecorder
+(WebM)" fillcolor=white]
+			Data_Export [label="📊 CSV Generator" fillcolor=white]
+			Snapshot [label="📷 Canvas Snapshot" fillcolor=white]
+		}
+		Note2 [label="負責即時運算 (60 FPS):
+推論、繪圖、互動" fillcolor="#E3F2FD" fontsize=10 shape=note]
+	}
+	User -> Browser [label="上傳影片"]
+	Browser -> UI_Logic [label="HTTP Request"]
+	UI_Logic -> File_IO [label="讀取"]
+	File_IO -> Encoder [label="二進制數據"]
+	Encoder -> Bridge [label="Base64 String"]
+	Config_Mgr -> Bridge [label="JSON Config"]
+	Bridge -> Pose_Model [label="Video Frame"]
+	Pose_Model -> Landmarks [label="座標數據"]
+	Landmarks -> Angle_Calc
+	Landmarks -> COM_Est
+	Landmarks -> GCT_Det
+	Landmarks -> Overlay_Draw
+	Landmarks -> Blueprint_Draw
+	Angle_Calc -> Vel_Calc
+	Angle_Calc -> Charts
+	Vel_Calc -> Charts
+	COM_Est -> Charts
+	Overlay_Draw -> Recorder
+	Overlay_Draw -> Snapshot
+	Charts -> Data_Export
+}
